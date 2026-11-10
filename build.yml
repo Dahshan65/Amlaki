@@ -421,6 +421,14 @@ jobs:
                   }
 
                   @JavascriptInterface
+                  public int bioCode() {
+                      if (Build.VERSION.SDK_INT < 28) return -1;
+                      if (Build.VERSION.SDK_INT < 29) return 0;
+                      BiometricManager bm = getSystemService(BiometricManager.class);
+                      return bm == null ? -2 : bm.canAuthenticate();
+                  }
+
+                  @JavascriptInterface
                   public void bioAuth(final String title, final String sub, final String cancel) {
                       runOnUiThread(() -> startBio(title, sub, cancel));
                   }
