@@ -100,6 +100,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.USE_BIOMETRIC" />
               <application
                   android:label="أملاكي"
                   android:icon="@mipmap/ic_launcher"
@@ -144,6 +145,10 @@ jobs:
           import android.content.ClipData;
           import android.content.ContentValues;
           import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.hardware.biometrics.BiometricManager;
+          import android.hardware.biometrics.BiometricPrompt;
+          import android.os.CancellationSignal;
           import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
@@ -294,6 +299,31 @@ jobs:
                   });
               }
 
+              private void startBio(String title, String sub, String cancel) {
+                  if (Build.VERSION.SDK_INT < 28) { bioResult(false, "unsupported"); return; }
+                  try {
+                      java.util.concurrent.Executor ex = getMainExecutor();
+                      BiometricPrompt bp = new BiometricPrompt.Builder(this)
+                              .setTitle(title)
+                              .setSubtitle(sub)
+                              .setNegativeButton(cancel, ex, (d, w) -> bioResult(false, "cancel"))
+                              .build();
+                      bp.authenticate(new CancellationSignal(), ex, new BiometricPrompt.AuthenticationCallback() {
+                          @Override
+                          public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r) { bioResult(true, ""); }
+                          @Override
+                          public void onAuthenticationError(int code, CharSequence msg) { bioResult(false, String.valueOf(msg)); }
+                      });
+                  } catch (Exception e) {
+                      bioResult(false, "error");
+                  }
+              }
+
+              private void bioResult(boolean ok, String msg) {
+                  String m = msg == null ? "" : msg.replace("\\", " ").replace("'", " ").replace("\n", " ");
+                  web.evaluateJavascript("window.onBio&&onBio(" + ok + ",'" + m + "')", null);
+              }
+
               private void toast(String m) {
                   Toast.makeText(this, m, Toast.LENGTH_LONG).show();
               }
@@ -378,6 +408,29 @@ jobs:
                               toast("لا يوجد تطبيق لفتح هذا الملف");
                           }
                       });
+                  }
+
+                  @JavascriptInterface
+                  public boolean bioAvailable() {
+                      if (Build.VERSION.SDK_INT < 28) return false;
+                      if (Build.VERSION.SDK_INT >= 29) {
+                          BiometricManager bm = getSystemService(BiometricManager.class);
+                          return bm != null && bm.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS;
+                      }
+                      return getPackageManager().hasSystemFeature(PackageManager.FEATURE_FINGERPRINT);
+                  }
+
+                  @JavascriptInterface
+                  public int bioCode() {
+                      if (Build.VERSION.SDK_INT < 28) return -1;
+                      if (Build.VERSION.SDK_INT < 29) return 0;
+                      BiometricManager bm = getSystemService(BiometricManager.class);
+                      return bm == null ? -2 : bm.canAuthenticate();
+                  }
+
+                  @JavascriptInterface
+                  public void bioAuth(final String title, final String sub, final String cancel) {
+                      runOnUiThread(() -> startBio(title, sub, cancel));
                   }
 
                   @JavascriptInterface
