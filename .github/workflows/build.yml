@@ -492,7 +492,9 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk Amlaki-v1.0.${{ github.run_number }}.apk
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk Amlaki-v1.0.${{ github.run_number }}.apk
+          cp app/build/outputs/apk/release/app-release.apk Amlaki.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -504,4 +506,6 @@ jobs:
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: أملاكي v1.0.${{ github.run_number }}
-          files: Amlaki-v1.0.${{ github.run_number }}.apk
+          files: |
+            Amlaki-v1.0.${{ github.run_number }}.apk
+            Amlaki.apk
