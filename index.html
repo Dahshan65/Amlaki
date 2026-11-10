@@ -305,7 +305,7 @@ function instCard(i){
 function vHome(){
   const warn=isOwner()&&D.settings.pw&&!D.settings.rec?`<div class="card warn" style="text-align:start"><div class="nm">⚠️ لم تُنشئ رمز استعادة لكلمة السر</div><p>إذا نسيت كلمة السر لن تستطيع الدخول. أنشئ الرمز وأرسله إلى واتساب الخاص بك.</p><button class="btn b-g full" onclick="settings()">🔑 إنشاء الرمز الآن</button></div>`:'';
   return licBanner()+warn+homeBody()+(isOwner()?`<button class="btn b-r full big" style="margin-top:34px" onclick="wipeAsk()">🗑️ مسح جميع البيانات</button>`:'')+
-  `<button class="btn b-l full big" style="margin-top:22px" onclick="guideSheet()">📖 دليل استخدام التطبيق</button><div class="credit"><p>تطوير: <b class="notr" dir="ltr">Dahshan Soft</b></p><a class="btn b-w full big" href="https://wa.me/962779221235" target="_blank" style="flex-direction:column;gap:0;padding:8px">💬 تواصل عبر واتساب<span dir="ltr" style="font-size:.95rem;opacity:.95">00962779221235</span></a></div>`}
+  `<button class="btn b-l full big" style="margin-top:22px" onclick="guideSheet()">📖 دليل استخدام التطبيق</button><div class="credit"><p>تطوير: <b class="notr" dir="ltr">Dahshan Soft</b></p><a class="btn b-w full big" href="https://wa.me/962779221235?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%D8%8C%20%D8%A3%D8%B1%D8%BA%D8%A8%20%D9%81%D9%8A%20%D8%A7%D9%84%D8%AD%D8%B5%D9%88%D9%84%20%D8%B9%D9%84%D9%89%20%D9%85%D8%B9%D9%84%D9%88%D9%85%D8%A7%D8%AA%20%D8%A3%D9%83%D8%AB%D8%B1." target="_blank" style="flex-direction:column;gap:0;padding:8px">💬 تواصل عبر واتساب<span dir="ltr" style="font-size:.95rem;opacity:.95">00962779221235</span></a></div>`}
 function homeData(){
   const td=today(),ym=td.slice(0,7);
   return{td,
@@ -1304,7 +1304,7 @@ const GUIDE_EN=[
 function guideSheet(){
   ctx=null;const G=LANG==='en'?GUIDE_EN:GUIDE_AR;
   openSheet('دليل استخدام التطبيق',`<div class="gd">${G.map(([t,b],k)=>`<details ${k?'':'open'}><summary>${t}</summary><div class="gb">${b}</div></details>`).join('')}</div>
-  <button class="btn b-w full big" onclick="openExt('https://wa.me/962779221235','_blank')">💬 تحتاج مساعدة؟ تواصل عبر واتساب</button>`);
+  <button class="btn b-w full big" onclick="openExt('https://wa.me/962779221235?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%D8%8C%20%D8%A3%D8%B1%D8%BA%D8%A8%20%D9%81%D9%8A%20%D8%A7%D9%84%D8%AD%D8%B5%D9%88%D9%84%20%D8%B9%D9%84%D9%89%20%D9%85%D8%B9%D9%84%D9%88%D9%85%D8%A7%D8%AA%20%D8%A3%D9%83%D8%AB%D8%B1.')">💬 تحتاج مساعدة؟ تواصل عبر واتساب</button>`);
 }
 
 /* ========== اللغة الإنجليزية ========== */
