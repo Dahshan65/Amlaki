@@ -155,6 +155,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--g)}
 .amt.in{color:var(--g)}.amt.out{color:var(--red)}
 .void{opacity:.7}.payl.void{background:#fbeeee;border-color:#efc9c9}
 .vstamp{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%) rotate(-18deg);border:5px solid #c62828;color:#c62828;font-size:54px;font-weight:900;padding:2px 26px;border-radius:12px;opacity:.55;pointer-events:none}
+.vimgs{grid-template-columns:1fr 1fr}.vimgs .att{aspect-ratio:auto;background:#fff}.vimgs .att img{height:auto;object-fit:contain}
 .payl{background:#f2f8f6;border:1px solid #d6e7e0;border-radius:12px;padding:8px 10px;margin-top:8px}
 @media print{
   body{padding:0;background:#fff}
@@ -1152,6 +1153,7 @@ async function download(name,blob){if(APP){APP.saveFile(name,await blobB64(blob)
 async function backupBlob(){
   const images={};
   for(const c of D.contracts)for(const k of(c.imgs||[])){const d=await imgGet(k);if(d)images[k]=d}
+  for(const x of(D.cash||[]))for(const k of(x.imgs||[])){const d=await imgGet(k);if(d)images[k]=d}
   D.settings.lastBackup=today();save();
   const st={...D.settings};delete st.pw;delete st.rec;delete st.users;delete st.bioUser;
   return new Blob([JSON.stringify({...D,settings:st,images})],{type:'application/json'});
@@ -1339,11 +1341,12 @@ function vchHtml(o,copy){
   <div class="vl"><span>وذلك عن</span><b>${esc(o.about||'')}</b></div>
   <div class="vl"><span>طريقة الدفع</span><b>${esc(o.method||'نقدي')}${o.check?' — '+esc(o.check):''}</b></div>
   ${o.note?`<div class="vl"><span>ملاحظات</span><b>${esc(o.note)}</b></div>`:''}
+  ${o.imgs&&o.imgs.length?`<div class="vl"><span>المرفقات</span><b>📎 ${o.imgs.length} مستند مرفق</b></div>`:''}
   ${o.void?`<div class="vl" style="color:var(--red)"><span>⚠️ ملغى بتاريخ ${fmtDate(o.void.date)}</span><b>السبب: ${esc(o.void.reason)}${o.void.by?' — '+esc(o.void.by):''}</b></div>`:''}
   <div class="sign" style="margin-top:34px"><div>${isOut?'توقيع المستلم':'توقيع الدافع'}<br><br>.....................</div><div>${isOut?'توقيع الصارف':'توقيع المستلم'}<br><br>.....................</div></div>
   ${copy?`<div class="vcopy">${copy}</div>`:''}</div>`;
 }
-function vchOpen(o,two){openRep(vchHtml(o,two?'نسخة المالك':'')+(two?`<div class="vcut">✂ - - - - - - - - - - - - - - - - - - - -</div>`+vchHtml(o,'نسخة المستأجر'):''))}
+function vchOpen(o,two){setTimeout(loadImgs,50);openRep(vchHtml(o,two?'نسخة المالك':'')+(o.imgs&&o.imgs.length&&!two?`<h2>📎 المستندات المرفقة</h2><div class="thumbs vimgs">${o.imgs.map(k=>attHtml(k)).join('')}</div>`:'')+(two?`<div class="vcut">✂ - - - - - - - - - - - - - - - - - - - -</div>`+vchHtml(o,'نسخة المستأجر'):''))}
 function instVch(id,payId){
   const i=I(id),c=C(i.cid),t=c&&T(c.tid),p=c&&P(c.pid);
   const y=(i.pays||[]).find(x=>x.id===payId)||(i.pays||[]).slice(-1)[0]||{};
@@ -1382,7 +1385,7 @@ function cashMoves(f,to){
   D.inst.filter(i=>C(i.cid)).forEach(i=>{const c=C(i.cid),t=T(c.tid),p=P(c.pid);
     live(i.pays).forEach(y=>L.push({src:'inst',id:i.id,pay:y.id,kind:'in',date:y.date,amount:+y.amt||0,cat:'إيجار',no:y.rno,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c.uid),method:y.method}))});
   D.props.forEach(p=>(p.taxes||[]).filter(r=>r.paid).forEach(r=>L.push({src:'tax',pid:p.id,kind:'out',date:r.paidDate,amount:(+r.masq||0)+(+r.maaref||0),cat:'مسقفات ومعارف',desc:p.name+' — عام '+r.year+(r.receipt?' (إيصال '+r.receipt+')':'')})));
-  live(D.cash).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',id:x.id,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
+  live(D.cash).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',id:x.id,imgs:(x.imgs||[]).length,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
   return L.filter(x=>x.date&&x.date>=f&&x.date<=to).sort((a,b)=>b.date.localeCompare(a.date)||(b.no||0)-(a.no||0));
 }
 function voidList(f,to){const V=[];
@@ -1405,10 +1408,10 @@ function cashTot(L){const i=sum(L.filter(x=>x.kind==='in'),x=>x.amount),o=sum(L.
 function cashSheet(){
   ctx=()=>cashSheet();const[f,to]=cashRange(cashPer),L=cashMoves(f,to),T0=cashTot(L),all=cashTot(cashMoves('0000-01-01','9999-12-31'));
   const P0={m:'هذا الشهر',y:'هذه السنة',a:'الكل'};
-  const row=x=>`<div class="card"><div class="cmv"><span class="ci">${CASH_IC[x.cat]||'📌'}</span><div class="cx"><div class="nm">${esc(x.cat)}${x.no?` <small class="mut">#${x.no}</small>`:''}</div><div class="mut">${esc(x.desc||'')}</div><div class="mut">📅 ${fmtDate(x.date)}${x.method?' • '+esc(x.method):''}</div></div>
+  const row=x=>`<div class="card"><div class="cmv"><span class="ci">${CASH_IC[x.cat]||'📌'}</span><div class="cx"><div class="nm">${esc(x.cat)}${x.no?` <small class="mut">#${x.no}</small>`:''}${x.src==='cash'?(x.imgs?` <span class="tag t-g">📎 ${x.imgs}</span>`:x.kind==='out'?' <span class="tag t-org">بدون فاتورة</span>':''):''}</div><div class="mut">${esc(x.desc||'')}</div><div class="mut">📅 ${fmtDate(x.date)}${x.method?' • '+esc(x.method):''}</div></div>
     <b class="amt ${x.kind}">${x.kind==='in'?'+':'−'} ${money(x.amount)}</b></div>
     ${x.src==='inst'?`<div class="btns"><button class="btn b-l" onclick="rcpt('${x.id}','${x.pay}')">🧾 سند القبض</button></div>`:''}
-    ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-r" onclick="voidForm('cash','${x.id}')">🚫 إلغاء</button></div>`:''}</div>`;
+    ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-l" onclick="cashFiles('${x.id}')">📎 ${x.imgs?'الفاتورة':'إرفاق'}</button><button class="btn b-r" onclick="voidForm('cash','${x.id}')">🚫 إلغاء</button></div>`:''}</div>`;
   openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.b<0?'out':'in'}">${money(all.b)}</b></div></div>
   <div class="btns"><button class="btn b-g big" onclick="cashForm('in')">➕ إيراد</button><button class="btn b-r big" onclick="cashForm('out')">➖ مصروف</button></div>
   <div class="chips">${Object.keys(P0).map(k=>`<button class="chip ${k===cashPer?'on':''}" onclick="cashPer='${k}';cashSheet()">${P0[k]}</button>`).join('')}</div>
@@ -1420,8 +1423,12 @@ function cashSheet(){
   ${L.length?L.slice(0,200).map(row).join(''):emptyBox('💰','لا توجد حركات في هذه الفترة')}
   ${(()=>{const V=voidList(f,to);return V.length?`<div class="sec">🚫 سندات ملغاة في هذه الفترة (${V.length})</div>`+V.map(v=>`<div class="card void"><div class="row"><div><div class="nm">${esc(v.type)} ${v.no}</div><div class="mut">${esc(v.desc)}</div><div class="mut">السبب: ${esc(v.reason)}</div></div><s class="amt">${money(v.amount)}</s></div><div class="btns"><button class="btn b-l" onclick="${v.open}">🧾 عرض</button></div></div>`).join(''):''})()}`);
 }
+let tmpCash=[];
+function cashAttHtml(){return`${tmpCash.length?`<div class="thumbs">${tmpCash.map(k=>attHtml(k)).join('')}</div>`:'<p class="mut">📷 صوّر الفاتورة أو ارفع ملف PDF — المدقق لا يقبل مصروفاً بدون مستند.</p>'}
+  <div class="btns"><button class="btn b-g" onclick="document.getElementById('k_img').click()">📷 إرفاق فاتورة</button>${tmpCash.length?`<button class="btn b-l" onclick="tmpCash=[];document.getElementById('k_att').innerHTML=cashAttHtml()">🧹 إزالة</button>`:''}</div>`}
+async function cashImgs(inp){const keys=await storeFiles(inp);tmpCash=tmpCash.concat(keys);document.getElementById('k_att').innerHTML=cashAttHtml();loadImgs();if(keys.length)toast(`تم إرفاق ${keys.length} ملف ✅`)}
 function cashForm(kind,id){
-  const x=id?(D.cash||[]).find(c=>c.id===id):{kind,date:today()};const out=kind==='out';
+  const x=id?(D.cash||[]).find(c=>c.id===id):{kind,date:today()};const out=kind==='out';tmpCash=[...(x.imgs||[])];setTimeout(loadImgs,50);
   openSheet(out?'➖ مصروف جديد (سند صرف)':'➕ إيراد جديد (سند قبض)',`
   <label>المبلغ (د.أ)</label><input id="k_amt" type="number" inputmode="decimal" value="${x.amount??''}">
   <label>التاريخ</label><input id="k_date" type="date" value="${x.date||today()}">
@@ -1431,31 +1438,44 @@ function cashForm(kind,id){
   <label>العقار (اختياري)</label><select id="k_pid"><option value="">— عام —</option>${opts(D.props.map(p=>[p.id,p.name]),x.pid)}</select>
   <label>طريقة الدفع</label><select id="k_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],x.method)}</select>
   <label>البيان / ملاحظة</label><input id="k_note" value="${esc(x.note||'')}">
+  <label>📎 ${out?'صورة الفاتورة / الإيصال':'مرفق (اختياري)'}</label><div class="card soft" id="k_att">${cashAttHtml()}</div>
+  <input type="file" id="k_img" accept="${ACCEPT}" multiple hidden onchange="cashImgs(this)">
   <button class="btn ${out?'b-r':'b-g'} full big" onclick="cashSave('${kind}','${id||''}')">💾 حفظ وإنشاء ${out?'سند الصرف':'سند القبض'}</button>
   <button class="btn b-l full" onclick="clearSheet()">🧹 مسح الحقول</button>`);
 }
 function cashSave(kind,id){
   const a=+val('k_amt');if(!a||a<=0){toast('اكتب المبلغ');return}
+  if(kind==='out'&&!tmpCash.length&&!confirm('لم تُرفق صورة الفاتورة.\nالمصروف بدون مستند لا يقبله المدقق. حفظ بدون مرفق؟'))return;
   if(val('k_cat')==='__new'&&!val('k_nc').trim()){toast('اكتب اسم النوع الجديد');return}
   D.cash=D.cash||[];let x=id&&D.cash.find(c=>c.id===id);
   if(!x){x={id:uid(),kind,no:nextNo(kind==='out'?'x':'k')};D.cash.push(x)}
   let cat=val('k_cat');if(cat==='__new'){cat=catAdd(kind,val('k_nc'));if(!cat){toast('اكتب اسم النوع الجديد');return}}
-  Object.assign(x,{amount:a,date:val('k_date')||today(),cat,party:val('k_party'),pid:val('k_pid'),method:val('k_m'),note:val('k_note'),by:typeof cur!=='undefined'?nameOf(cur):''});
+  Object.assign(x,{amount:a,date:val('k_date')||today(),cat,party:val('k_party'),pid:val('k_pid'),method:val('k_m'),note:val('k_note'),imgs:[...tmpCash],by:typeof cur!=='undefined'?nameOf(cur):''});
   save();render();cashSheet();toast((kind==='out'?'تم حفظ المصروف — سند صرف رقم ':'تم حفظ الإيراد — سند قبض رقم ')+x.no);
 }
 function cashDel_old(id){if(!confirm('حذف هذه الحركة من الصندوق؟'))return;D.cash=D.cash.filter(c=>c.id!==id);save();cashSheet();toast('تم الحذف')}
+function cashFiles(id){
+  const x=(D.cash||[]).find(c=>c.id===id);if(!x)return;const im=x.imgs||[];
+  openSheet('📎 مرفقات '+(x.kind==='out'?'سند الصرف ص-':'سند القبض ق-')+x.no,`<div class="card soft"><div class="nm">${esc(x.cat)} — ${money(x.amount)}</div><p class="mut">${fmtDate(x.date)}${x.party?' • '+esc(x.party):''}</p></div>
+  <div class="card">${im.length?`<div class="thumbs">${im.map(k=>attHtml(k)).join('')}</div><p class="mut mt">اضغط على الملف لفتحه</p>`:'<p class="mut">لا يوجد مرفق بعد.</p>'}
+  <button class="btn b-g full" onclick="document.getElementById('cf_img').click()">📷 إضافة صورة / PDF</button>
+  <input type="file" id="cf_img" accept="${ACCEPT}" multiple hidden onchange="cashAddFiles('${id}',this)"></div>
+  <p class="mut">💡 يمكن إضافة مستند لاحقاً، لكن لا يمكن حذف مستند مرفق بسند (للحفاظ على أدلة التدقيق).</p>
+  <button class="btn b-l full" onclick="cashSheet()">↩️ رجوع إلى الصندوق</button>`);setTimeout(loadImgs,50);
+}
+async function cashAddFiles(id,inp){const keys=await storeFiles(inp);if(!keys.length)return;const x=D.cash.find(c=>c.id===id);x.imgs=(x.imgs||[]).concat(keys);save();cashFiles(id);toast(`تم إرفاق ${keys.length} ملف ✅`)}
 function cashVch(id){const x=D.cash.find(c=>c.id===id);if(!x)return;const p=x.pid&&P(x.pid);
-  vchOpen({void:x.void,kind:x.kind,no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,party:x.party,amount:x.amount,about:x.cat+(p?' — '+p.name:'')+(x.note?' — '+x.note:''),method:x.method},false)}
+  vchOpen({imgs:x.imgs,void:x.void,kind:x.kind,no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,party:x.party,amount:x.amount,about:x.cat+(p?' — '+p.name:'')+(x.note?' — '+x.note:''),method:x.method},false)}
 function repCash(){
   const f=val('k_from')||'0000-01-01',to=val('k_to')||'9999-12-31';
   const prev=cashTot(cashMoves('0000-01-01',addDays(f,-1))).b,L=cashMoves(f,to).reverse(),T0=cashTot(L);
   let bal=prev;const byC={};
   const rows=L.map(x=>{bal+=x.kind==='in'?x.amount:-x.amount;const k=(x.kind==='in'?'⬆️ ':'⬇️ ')+x.cat;byC[k]=(byC[k]||0)+x.amount;
-    return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.kind==='in'?money(x.amount):'',x.kind==='out'?`<b class="red">${money(x.amount)}</b>`:'',money(bal)])});
+    return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.src==='cash'?(x.imgs?'✔':(x.kind==='out'?'<b class="red">✗</b>':'—')):'—',x.kind==='in'?money(x.amount):'',x.kind==='out'?`<b class="red">${money(x.amount)}</b>`:'',money(bal)])});
   openRep(rHead('كشف الصندوق: الإيرادات والمصروفات',`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
     rBoxes([['الرصيد السابق',money(prev)],['الإيرادات',money(T0.i),'g'],['المصروفات',money(T0.o),'r'],['الصافي للفترة',money(T0.b),'o'],['الرصيد الحالي',money(prev+T0.b),'g']])+
     `<h2>حسب البند</h2>`+tbl(['البند','المبلغ'],Object.entries(byC).map(([k,v])=>tr([esc(k),money(v)])))+
-    `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','إيراد','مصروف','الرصيد'],rows,['المجموع','','','',money(T0.i),money(T0.o),money(prev+T0.b)]));
+    `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','مستند','إيراد','مصروف','الرصيد'],rows,['المجموع','','','','',money(T0.i),money(T0.o),money(prev+T0.b)])+(L.some(x=>x.src==='cash'&&x.kind==='out'&&!x.imgs)?'<p class="red">✗ = مصروف بدون مستند مرفق</p>':''));
 }
 
 
@@ -1554,6 +1574,7 @@ function taxTbl(list){
 /* ========== دليل الاستخدام ========== */
 const GUIDE_AR=[
 ['🧾 سند القبض','بعد تسجيل أي دفعة يأخذ سند قبض برقم متسلسل. اضغط «سند قبض» تحت الدفعة المدفوعة لطباعته بنسختين (للمالك وللمستأجر) مع المبلغ كتابةً، أو «إرسال السند» ليصل للمستأجر على الواتساب.'],
+['📎 فواتير المصاريف','عند إضافة مصروف في الصندوق اضغط «📷 إرفاق فاتورة» وصوّر الفاتورة أو ارفع PDF. المصروف بدون مستند يظهر بعلامة «بدون فاتورة» وبـ ✗ في كشف الصندوق. يمكنك إرفاق المستند لاحقاً من زر «📎 إرفاق» تحت الحركة.'],
 ['🚫 إلغاء السندات','السند لا يُحذف أبداً. إذا أخطأت اضغط «إلغاء السند» واكتب السبب: يبقى السند برقمه مختوماً «ملغى» ولا يدخل في أي مجموع، ثم سجّل سنداً جديداً صحيحاً. من التقارير «سجل السندات» يعرض كل الأرقام بالتسلسل ويُنبّهك إلى أي رقم مفقود.'],
 ['🤝 الشركاء','في صفحة العقارات اضغط «🤝 الشركاء» تحت العقار، وأضف اسم كل شريك ونسبته (المجموع 100%). من نفس الصفحة اطبع «كشف توزيع الشركاء» لفترة: التحصيل والمدفوعات والصافي وحصة كل شريك. ومن التقارير «كشف حساب شريك» لكل عقاراته معاً.'],
 ['💰 الصندوق','من الرئيسية اضغط «الصندوق». دفعات الإيجار والمسقفات تدخل تلقائياً، وتضيف أنت أي إيراد آخر (➕) أو مصروف (➖) مثل الصيانة والكهرباء وسحب المالك، ولكل حركة سند قبض أو صرف. اختر الفترة لترى الإيرادات والمصروفات والصافي، واطبع «كشف الصندوق» مع الرصيد.'],
