@@ -1470,9 +1470,10 @@ function cashSheet(){
     <b class="amt ${x.kind}">${x.kind==='in'?'+':'−'} ${money(x.amount)}</b></div>
     ${x.src==='inst'?`<div class="btns"><button class="btn b-l" onclick="rcpt('${x.id}','${x.pay}')">🧾 سند القبض</button></div>`:''}
     ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-l" onclick="cashFiles('${x.id}')">📎 ${x.imgs?'الفاتورة':'إرفاق'}</button><button class="btn b-r" onclick="voidForm('cash','${x.id}')">🚫 إلغاء</button></div>`:''}</div>`;
-  openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.c<0?'out':'in'}">${money(all.c)}</b></div>
+  const opn=sum(D.accts,a=>+a.open||0),gt=all.c+opn;
+  openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${gt<0?'out':'in'}">${money(gt)}</b></div>
   ${all.e?`<div class="row mt"><span class="mut">سحوبات المالك وتوزيعات الشركاء (كل الفترات)</span><b>${money(all.e)}</b></div>`:''}
-  ${all.h?`<div class="row mt"><span class="mut">منها 🔐 تأمينات محتجزة (أمانة للمستأجرين — ليست ربحاً)</span><b>${money(all.h)}</b></div><div class="row"><span class="mut">صافي ما يخصّك</span><b>${money(all.b)}</b></div>`:''}</div>
+  ${all.h?`<div class="row mt"><span class="mut">منها 🔐 تأمينات محتجزة (أمانة للمستأجرين — ليست ربحاً)</span><b>${money(all.h)}</b></div><div class="row"><span class="mut">صافي ما يخصّك</span><b>${money(gt-all.h)}</b></div>`:''}</div>
   ${acctsHtml()}
   <div class="btns"><button class="btn b-g big" onclick="cashForm('in')">➕ إيراد</button><button class="btn b-r big" onclick="cashForm('out')">➖ مصروف</button></div>
   <div class="chips">${Object.keys(P0).map(k=>`<button class="chip ${k===cashPer?'on':''}" onclick="cashPer='${k}';cashSheet()">${P0[k]}</button>`).join('')}</div>
@@ -1532,7 +1533,7 @@ function cashVch(id){const x=D.cash.find(c=>c.id===id);if(!x)return;const p=x.pi
   vchOpen({imgs:x.imgs,void:x.void,kind:x.kind,no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,party:x.party,amount:x.amount,about:x.cat+(p?' — '+p.name:'')+(x.note?' — '+x.note:''),method:x.method},false)}
 function repCash(){
   const f=val('k_from')||'0000-01-01',to=val('k_to')||'9999-12-31';
-  const prev=cashTot(cashMoves('0000-01-01',addDays(f,-1))).c,L=cashMoves(f,to).reverse(),T0=cashTot(L);
+  const prev=cashTot(cashMoves('0000-01-01',addDays(f,-1))).c+sum(D.accts,a=>+a.open||0),L=cashMoves(f,to).reverse(),T0=cashTot(L);
   let bal=prev;const byC={};
   const rows=L.map(x=>{bal+=x.kind==='in'?x.amount:-x.amount;const k=(x.kind==='in'?'⬆️ ':'⬇️ ')+x.cat;byC[k]=(byC[k]||0)+x.amount;
     return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.src==='cash'?(x.imgs?'✔':(x.kind==='out'?'<b class="red">✗</b>':'—')):'—',x.kind==='in'?money(x.amount)+(x.lia?' 🔐':''):'',x.kind==='out'?`<b class="red">${money(x.amount)}</b>`+(x.lia?' 🔐':''):'',money(bal)])});
@@ -1699,11 +1700,12 @@ function acctMoves(){
   return L.filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function acctBal(id,to){to=to||'9999-12-31';const a=AC(id);return(+a.open||0)+sum(acctMoves().filter(x=>x.acct===id&&x.date<=to),x=>x.amt)}
-function underColl(){return sum(allCheques().filter(x=>!x.p.void&&['held','deposited'].includes(x.p.chq.st)),x=>x.p.amt)}
+function notesHeld(){return sum(D.contracts.filter(c=>c.dep&&!c.dep.void&&c.dep.method==='كمبيالة'),c=>(+c.dep.amt||0)-sum(live(c.dep.moves).filter(m=>m.type==='refund'),m=>m.amt))}
+function underColl(){return sum(allCheques().filter(x=>!x.p.void&&['held','deposited'].includes(x.p.chq.st)),x=>x.p.amt)+notesHeld()}
 function acctsHtml(){
   const uc=underColl(),tot=sum(D.accts,a=>acctBal(a.id))+uc;
   return`<div class="card soft"><div class="nm">💼 أرصدة الحسابات</div>${D.accts.map(a=>{const b=acctBal(a.id);return`<button class="row acrow" onclick="repAcct('${a.id}')"><span>${ACT_IC[a.type]||'💰'} ${esc(a.name)}</span><b class="amt ${b<0?'out':'in'}">${money(b)} ‹</b></button>`}).join('')}
-  ${uc?`<div class="row acrow"><span>🧾 شيكات برسم التحصيل</span><b>${money(uc)}</b></div>`:''}
+  ${uc-notesHeld()?`<div class="row acrow"><span>🧾 شيكات برسم التحصيل</span><b>${money(uc-notesHeld())}</b></div>`:''}${notesHeld()?`<div class="row acrow"><span>📝 كمبيالات تأمين</span><b>${money(notesHeld())}</b></div>`:''}
   <div class="row acrow" style="border-top:2px solid var(--g)"><b>المجموع</b><b>${money(tot)}</b></div>
   <div class="btns"><button class="btn b-g" onclick="xferForm()">🔁 تحويل بين الحسابات</button><button class="btn b-l" onclick="acctsSheet()">⚙️ الحسابات</button></div></div>`;
 }
