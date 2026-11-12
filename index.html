@@ -322,7 +322,7 @@ function instCard(i){
   let btns;
   const pl=(i.pays||[]).map(p=>p.void?`<div class="payl void"><div class="row"><span>🚫 <b>سند ${p.rno||''} — ملغى</b> • ${fmtDate(p.date)}</span><s class="amt">${money(p.amt)}</s></div>
     <p class="mut">سبب الإلغاء: ${esc(p.void.reason)} • ${fmtDate(p.void.date)}${p.void.by?' • '+esc(p.void.by):''}</p><div class="btns"><button class="btn b-l" onclick="rcpt('${i.id}','${p.id}')">🧾 عرض السند الملغى</button></div></div>`
-    :`<div class="payl"><div class="row"><span>🧾 <b>${p.rno?'سند '+p.rno:'دفعة'}</b> • ${fmtDate(p.date)} • ${esc(p.method||'')}</span><b class="amt in">${money(p.amt)}</b></div>
+    :`<div class="payl"><div class="row"><span>🧾 <b>${p.rno?'سند '+p.rno:'دفعة'}</b> • ${fmtDate(p.date)} • ${esc(p.method||'')}${p.chq?' '+chqTag(p.chq):''}</span><b class="amt in">${money(p.amt)}</b></div>
     <div class="btns"><button class="btn b-g" onclick="rcpt('${i.id}','${p.id}')">🧾 السند</button>${t&&t.phone?`<button class="btn b-w" onclick="rcptWa('${i.id}','${p.id}')">💬 إرسال</button>`:''}<button class="btn b-l" onclick="voidForm('pay','${i.id}','${p.id}')">🚫 إلغاء السند</button></div></div>`).join('');
   if(i.paid){
     btns=pl;
@@ -351,6 +351,7 @@ function homeData(){
     att:D.inst.filter(i=>!i.paid&&days(td,i.due)<=7).sort((a,b)=>a.due.localeCompare(b.due)),
     utax:D.props.filter(p=>{const r=taxRec(p,yr());return taxDue(p,yr())>0&&!(r&&r.paid)}),
     legal:D.legal.filter(lOpen).sort((a,b)=>(a.next||'9').localeCompare(b.next||'9')),
+    chq:allCheques().filter(x=>!x.p.void&&['held','deposited'].includes(x.p.chq.st)&&days(td,x.p.chq.due)<=7),
     ending:D.contracts.filter(c=>{const d=days(td,c.end);return d>0&&d<=30}).sort((a,b)=>a.end.localeCompare(b.end))};
 }
 function homeBody(){
@@ -373,6 +374,7 @@ function homeBody(){
     ${tile('⚖️','إجراءات قانونية جارية',H.legal.length,'legalAll()',1)}
     ${tile('🏛️','مسقفات ومعارف غير مدفوعة',H.utax.length,'taxAll()',1)}
     ${tile('📄','عقود تنتهي خلال شهر',H.ending.length,'endingAll()',1)}
+    ${tile('🏦','شيكات تستحق خلال أسبوع',H.chq.length,"chqPer='due';chequesSheet()",1)}
     </div>`;
   }
   h+=`<div class="sec">ماذا تريد أن تفعل؟</div>
@@ -381,6 +383,7 @@ function homeBody(){
     <button class="act gold" onclick="go('pay')"><span class="ic">💵</span>سجّل دفعة</button>
     <button class="act lt" onclick="tenantsSheet()"><span class="ic">👥</span>المستأجرون (${D.tenants.length})</button>
     <button class="act wide" onclick="cashSheet()"><span class="ic">💰</span>الصندوق: الإيرادات والمصروفات</button>
+    <button class="act wide lt" onclick="chqPer='held';chequesSheet()"><span class="ic">🏦</span>الشيكات</button>
     <button class="act wide lt" onclick="reportsSheet()"><span class="ic">🖨️</span>التقارير والبيانات</button>
   </div>`;
   return h;
@@ -592,6 +595,7 @@ function unitDetail(pid,unitId){
       ${c.svc?`<div class="kv"><span>أجور الخدمات</span><b>${money(c.svc)} ${FREQ[c.freq]}</b></div>`:''}
       <div class="kv"><span>قيمة العقد كاملة</span><b>${money(total)}</b></div>
       <div class="kv"><span>طريقة الدفع</span><b>${esc(c.method)}</b></div>
+      <button class="btn b-l full" onclick="bulkChq('${c.id}')">🏦 استلام شيكات العقد دفعة واحدة</button>
       <button class="btn b-g full big" onclick="contractEdit('${c.id}')">✏️ تعديل العقد (الأجرة، المدة، طريقة الدفع...)</button>
       <div class="btns"><button class="btn b-r" onclick="endContract('${c.id}')">🚪 إنهاء العقد / إخلاء</button></div></div>
     ${depBlock(c)}
@@ -912,7 +916,11 @@ function payForm(id){
   <label>المبلغ المدفوع (د.أ)</label><input id="f_amt" type="number" inputmode="decimal" value="${rem(i)}">
   <p class="mut">💡 إذا دفع المستأجر جزءاً فقط اكتب ما دفعه، ويبقى الباقي ديناً عليه في نفس الدفعة.</p>
   <label>تاريخ الدفع</label><input id="f_date" type="date" data-today value="${today()}">
-  <label>طريقة الدفع</label><select id="f_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],i.method)}</select>
+  <label>طريقة الدفع</label><select id="f_m" onchange="document.getElementById('f_chq').style.display=this.value==='شيك'?'':'none'">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],i.method)}</select>
+  <div id="f_chq" class="card soft" style="${i.method==='شيك'?'':'display:none'}"><div class="nm">🧾 بيانات الشيك</div>
+    <div class="row2"><div><label>رقم الشيك</label><input id="f_cn" value="${esc(i.checkNo||'')}"></div><div><label>البنك</label><input id="f_cb" value="${esc(i.bank||'')}"></div></div>
+    <label>تاريخ استحقاق الشيك</label><input id="f_cd" type="date" value="${i.due>today()?i.due:today()}">
+    <p class="mut">💡 الشيك يُعتبر «برسم التحصيل» حتى تسجّل إيداعه وتحصيله من صفحة الشيكات. إذا رجع يُلغى السند تلقائياً وتعود الدفعة ديناً.</p></div>
   <label>ملاحظة (اختياري)</label><input id="f_note">
   <button class="btn b-g full big" onclick="doPay('${id}')">✅ حفظ الدفعة</button>
   <button class="btn b-l full" onclick="clearSheet()">🧹 مسح الحقول</button>`);
@@ -920,7 +928,10 @@ function payForm(id){
 function doPay(id){
   const i=I(id),a=+val('f_amt');if(!(a>0)){toast('اكتب المبلغ المدفوع');return}
   if(a>rem(i)+0.0005&&!confirm('المبلغ ('+money(a)+') أكبر من الباقي على هذه الدفعة ('+money(rem(i))+'). متابعة؟'))return;
-  const p={id:uid(),amt:a,date:val('f_date')||today(),method:val('f_m'),note:val('f_note'),rno:nextNo('r')};
+  const m=val('f_m'),rd=val('f_date')||today();
+  if(m==='شيك'&&!val('f_cn').trim()){toast('اكتب رقم الشيك');return}
+  const p={id:uid(),amt:a,date:m==='شيك'?(val('f_cd')||rd):rd,method:m,note:val('f_note'),rno:nextNo('r')};
+  if(m==='شيك'){p.chq={no:val('f_cn').trim(),bank:val('f_cb').trim(),due:p.date,recv:rd,st:'held',h:[{st:'held',date:rd}]};i.checkNo=p.chq.no;i.bank=p.chq.bank}
   i.pays=i.pays||[];i.pays.push(p);syncInst(i);
   after('تم تسجيل الدفعة ✅ — سند قبض رقم '+p.rno+(i.paid?'':' • الباقي '+money(rem(i))));
   rcpt(id,p.id);
@@ -1300,6 +1311,7 @@ function reportsSheet(){
   <button class="btn b-g full big" onclick="closeAll();cashSheet()">💰 الصندوق وكشف الحركة</button>
   <button class="btn b-g full big" onclick="repVouchers()">🧾 سجل السندات (للتدقيق)</button>
   <button class="btn b-g full big" onclick="repDeps()">🔐 تقرير التأمينات المحتجزة</button>
+  <button class="btn b-g full big" onclick="closeAll();chqPer='held';chequesSheet()">🏦 الشيكات وتقريرها</button>
   <div class="card soft mt"><div class="nm">💵 تقرير التحصيل لفترة</div>
     <div class="row2"><div><label>من</label><input type="date" id="r_from" value="${m}"></div><div><label>إلى</label><input type="date" id="r_to" value="${today()}"></div></div>
     <button class="btn b-g full" onclick="repCollect()">عرض تقرير التحصيل</button></div>
@@ -1358,7 +1370,7 @@ function instVch(id,payId){
   if(!y.rno){y.rno=nextNo('r');syncInst(i);save()}
   const about=`إيجار ${p?p.name:''} - ${unitName(p,c&&c.uid)} عن الدفعة المستحقة بتاريخ ${fmtDate(i.due)}${i.svc?' (شاملة أجور خدمات '+money(i.svc)+')':''}`;
   const part=(+y.amt||0)<(+i.amount||0)-0.0005;
-  return{void:y.void,kind:'in',no:y.rno,date:y.date,party:t?t.name:'',amount:y.amt,about:about+(part?` — دفعة جزئية من أصل ${money(i.amount)}${i.paid?'':'، الباقي '+money(rem(i))}`:''),method:y.method,check:i.checkNo?('شيك رقم '+i.checkNo+(i.bank?' - '+i.bank:'')):'',note:y.note,phone:t&&t.phone};
+  return{void:y.void,kind:'in',no:y.rno,date:y.chq?y.chq.recv:y.date,party:t?t.name:'',amount:y.amt,about:about+(part?` — دفعة جزئية من أصل ${money(i.amount)}${i.paid?'':'، الباقي '+money(rem(i))}`:''),method:y.method,check:y.chq?('شيك رقم '+y.chq.no+(y.chq.bank?' - '+y.chq.bank:'')+' — مستحق '+fmtDate(y.chq.due)+(y.chq.st==='cleared'?' (محصّل)':' (برسم التحصيل)')):'',note:y.note,phone:t&&t.phone};
 }
 function rcpt(id,pid){vchOpen(instVch(id,pid),true)}
 function rcptWa(id,pid){
@@ -1493,6 +1505,70 @@ function repCash(){
 }
 
 
+
+
+/* ========== الشيكات ========== */
+const CHQ_ST={held:['برسم التحصيل','t-org'],deposited:['مُودَع في البنك','t-gr'],cleared:['محصّل ✔','t-g'],bounced:['مرتجع ✗','t-red']};
+const chqTag=q=>`<span class="tag ${CHQ_ST[q.st][1]}">${CHQ_ST[q.st][0]}</span>`;
+function allCheques(){const L=[];D.inst.forEach(i=>{const c=C(i.cid);if(!c)return;(i.pays||[]).forEach(p=>{if(p.chq)L.push({i,c,p})})});return L}
+let chqPer='held';
+function chequesSheet(){
+  ctx=()=>chequesSheet();const td=today(),A=allCheques();
+  const F={due:['تستحق خلال أسبوع',x=>['held','deposited'].includes(x.p.chq.st)&&days(td,x.p.chq.due)<=7],held:['برسم التحصيل',x=>x.p.chq.st==='held'],deposited:['مُودَعة',x=>x.p.chq.st==='deposited'],bounced:['مرتجعة',x=>x.p.chq.st==='bounced'],cleared:['محصّلة',x=>x.p.chq.st==='cleared'],all:['الكل',()=>true]};
+  const L=A.filter(F[chqPer][1]).sort((a,b)=>a.p.chq.due.localeCompare(b.p.chq.due));
+  const card=({i,c,p})=>{const t=T(c.tid),pr=P(c.pid),q=p.chq,d=days(td,q.due);
+    return`<div class="card ${q.st==='bounced'?'late':q.st==='cleared'?'paid':d<=0?'soon':''}"><div class="row"><div><div class="nm">🧾 شيك ${esc(q.no)} ${q.bank?'— '+esc(q.bank):''}</div><div class="mut">👤 ${esc(t?t.name:'')} • ${esc(pr?pr.name:'')} - ${esc(unitName(pr,c.uid))}</div></div><b class="amt">${money(p.amt)}</b></div>
+    <div class="row mt"><span class="mut">📅 يستحق ${fmtDate(q.due)}${['held','deposited'].includes(q.st)?(d<0?` — <b class="red">فات بـ ${-d} يوم</b>`:d===0?' — <b>اليوم</b>':` — بعد ${d} يوم`):''}</span>${chqTag(q)}</div>
+    ${q.st==='held'?`<div class="btns"><button class="btn b-g" onclick="chqSet('${i.id}','${p.id}','deposited')">🏦 تم الإيداع</button><button class="btn b-r" onclick="chqBounce('${i.id}','${p.id}')">❌ مرتجع</button></div>`:''}
+    ${q.st==='deposited'?`<div class="btns"><button class="btn b-g" onclick="chqSet('${i.id}','${p.id}','cleared')">✅ تم التحصيل</button><button class="btn b-r" onclick="chqBounce('${i.id}','${p.id}')">❌ مرتجع</button></div>`:''}
+    ${q.st==='bounced'?`<p class="mut">سبب الإرجاع: ${esc(q.why||'')} • ${fmtDate((q.h.slice(-1)[0]||{}).date)}</p><div class="btns"><button class="btn b-g" onclick="payForm('${i.id}')">💵 تسجيل دفعة بديلة</button><button class="btn b-l" onclick="closeAll();legalForm('${c.pid}','${c.uid}')">⚖️ إجراء قانوني</button></div>`:''}
+    <div class="btns"><button class="btn b-l" onclick="rcpt('${i.id}','${p.id}')">🧾 سند القبض ${p.rno||''}</button></div></div>`};
+  const tot=k=>sum(A.filter(x=>x.p.chq.st===k),x=>x.p.amt);
+  openSheet('🏦 الشيكات',`<div class="stats"><div class="stat org"><span>برسم التحصيل</span><b>${money(tot('held'))}</b></div><div class="stat"><span>مُودَعة</span><b>${money(tot('deposited'))}</b></div>
+    <div class="stat red"><span>مرتجعة</span><b>${money(tot('bounced'))}</b></div><div class="stat gold"><span>محصّلة</span><b>${money(tot('cleared'))}</b></div></div>
+  <div class="chips">${Object.keys(F).map(k=>`<button class="chip ${k===chqPer?'on':''}" onclick="chqPer='${k}';chequesSheet()">${F[k][0]} (${A.filter(F[k][1]).length})</button>`).join('')}</div>
+  <button class="btn b-l full" onclick="repCheques()">🖨️ تقرير الشيكات</button>
+  ${L.length?L.map(card).join(''):emptyBox('🏦','لا توجد شيكات هنا. الشيك يُسجَّل عند اختيار «شيك» في تسجيل الدفعة، أو من زر «استلام شيكات العقد» داخل الوحدة.')}`);
+}
+function chqSet(iid,pid,st){const i=I(iid),p=i.pays.find(x=>x.id===pid);
+  openSheet(st==='deposited'?'🏦 إيداع الشيك':'✅ تحصيل الشيك',`<div class="card soft"><div class="nm">شيك ${esc(p.chq.no)} — ${money(p.amt)}</div></div>
+  <label>${st==='deposited'?'تاريخ الإيداع':'تاريخ التحصيل'}</label><input id="cq_d" type="date" value="${today()}">
+  <button class="btn b-g full big" onclick="chqSetSave('${iid}','${pid}','${st}')">💾 حفظ</button><button class="btn b-l full" onclick="chequesSheet()">رجوع</button>`)}
+function chqSetSave(iid,pid,st){const i=I(iid),p=i.pays.find(x=>x.id===pid);
+  p.chq.st=st;p.chq.h.push({st,date:val('cq_d')||today()});save();render();chequesSheet();toast(st==='deposited'?'تم تسجيل الإيداع 🏦':'تم تحصيل الشيك ✅')}
+function chqBounce(iid,pid){const i=I(iid),p=i.pays.find(x=>x.id===pid),c=C(i.cid),t=T(c.tid);
+  openSheet('❌ شيك مرتجع',`<div class="card warn" style="text-align:start"><div class="nm">شيك ${esc(p.chq.no)} — ${money(p.amt)} — ${esc(t?t.name:'')}</div>
+  <p>سيُلغى سند القبض رقم ${p.rno} تلقائياً (مختوماً «ملغى — شيك مرتجع»)، وتعود الدفعة ديناً على المستأجر.</p></div>
+  <label>سبب الإرجاع</label><select id="b_w">${opts(['عدم كفاية الرصيد','توقيع غير مطابق','الحساب مغلق','إيقاف صرف','أخرى'])}</select>
+  <label>تاريخ الإرجاع</label><input id="b_d" type="date" value="${today()}">
+  <button class="btn b-r full big" onclick="doBounce('${iid}','${pid}')">❌ تسجيل الشيك مرتجعاً</button><button class="btn b-l full" onclick="chequesSheet()">رجوع</button>`)}
+function doBounce(iid,pid){const i=I(iid),p=i.pays.find(x=>x.id===pid),d=val('b_d')||today(),w=val('b_w');
+  p.chq.st='bounced';p.chq.why=w;p.chq.h.push({st:'bounced',date:d});p.void={date:d,reason:'شيك مرتجع: '+w,by:nameOf(cur)};syncInst(i);
+  save();render();chqPer='bounced';chequesSheet();toast('تم تسجيل الشيك مرتجعاً — الدفعة عادت ديناً على المستأجر')}
+function bulkChq(cid){
+  const c=C(cid),t=T(c.tid),L=D.inst.filter(i=>i.cid===cid&&!i.paid).sort((a,b)=>a.due.localeCompare(b.due));
+  if(!L.length){toast('لا توجد دفعات غير مدفوعة في هذا العقد');return}
+  openSheet('🏦 استلام شيكات العقد',`<div class="card soft"><div class="nm">👤 ${esc(t?t.name:'')}</div><p>اكتب رقم كل شيك، والتطبيق يسجّل كل دفعة «مدفوعة بشيك برسم التحصيل» بتاريخ استحقاقها، ويصدر لها سند قبض.</p>
+  <label>البنك (لكل الشيكات)</label><input id="bk_b" value="${esc(c.bank||L[0].bank||'')}"><label>تاريخ الاستلام</label><input id="bk_d" type="date" value="${today()}"></div>
+  ${L.map((i,k)=>`<div class="card"><div class="row"><label style="margin:0;display:flex;gap:8px;align-items:center"><input type="checkbox" id="bk_c${k}" checked style="width:24px;height:24px"> ${fmtDate(i.due)}</label><b>${money(rem(i))}</b></div>
+    <input id="bk_n${k}" placeholder="رقم الشيك" value="${esc(i.checkNo||'')}"></div>`).join('')}
+  <button class="btn b-g full big" onclick="bulkChqSave('${cid}')">💾 استلام الشيكات المحددة</button>`);
+}
+function bulkChqSave(cid){
+  const L=D.inst.filter(i=>i.cid===cid&&!i.paid).sort((a,b)=>a.due.localeCompare(b.due)),bk=val('bk_b').trim(),rd=val('bk_d')||today();let n=0;
+  for(let k=0;k<L.length;k++){if(!document.getElementById('bk_c'+k).checked)continue;const no=val('bk_n'+k).trim();if(!no){toast('اكتب رقم الشيك للدفعة '+fmtDate(L[k].due));return}}
+  L.forEach((i,k)=>{if(!document.getElementById('bk_c'+k).checked)return;const no=val('bk_n'+k).trim();
+    const p={id:uid(),amt:rem(i),date:i.due,method:'شيك',note:'',rno:nextNo('r'),chq:{no,bank:bk,due:i.due,recv:rd,st:'held',h:[{st:'held',date:rd}]}};
+    i.pays=i.pays||[];i.pays.push(p);i.checkNo=no;i.bank=bk;syncInst(i);n++});
+  closeSheet();after('تم استلام '+n+' شيك ✅ — صدر لكل منها سند قبض');
+}
+function repCheques(){
+  const A=allCheques().sort((a,b)=>a.p.chq.due.localeCompare(b.p.chq.due)),td=today();
+  const rows=A.map(({i,c,p})=>{const t=T(c.tid),pr=P(c.pid),q=p.chq;return tr([esc(q.no),esc(q.bank||''),fmtDate(q.due),esc(t?t.name:''),esc((pr?pr.name:'')+' - '+unitName(pr,c.uid)),money(p.amt),CHQ_ST[q.st][0]+(q.why?' — '+esc(q.why):''),p.rno||''],q.st==='bounced'?'late':q.st==='cleared'?'':['held','deposited'].includes(q.st)&&q.due<td?'late':'')});
+  const t=k=>money(sum(A.filter(x=>x.p.chq.st===k),x=>x.p.amt));
+  openRep(rHead('تقرير الشيكات')+rBoxes([['برسم التحصيل',t('held'),'o'],['مُودَعة',t('deposited')],['محصّلة',t('cleared'),'g'],['مرتجعة',t('bounced'),'r']])+
+    tbl(['رقم الشيك','البنك','تاريخ الاستحقاق','المستأجر','العقار / الوحدة','المبلغ','الحالة','سند القبض'],rows));
+}
 
 /* ========== التأمينات (الكفالة) ========== */
 function depBal(c){const d=c&&c.dep;if(!d||d.void)return 0;return Math.round(((+d.amt||0)-sum(live(d.moves),m=>m.amt))*1000)/1000}
@@ -1657,6 +1733,7 @@ function taxTbl(list){
 /* ========== دليل الاستخدام ========== */
 const GUIDE_AR=[
 ['🧾 سند القبض','بعد تسجيل أي دفعة يأخذ سند قبض برقم متسلسل. اضغط «سند قبض» تحت الدفعة المدفوعة لطباعته بنسختين (للمالك وللمستأجر) مع المبلغ كتابةً، أو «إرسال السند» ليصل للمستأجر على الواتساب.'],
+['🏦 الشيكات','عند تسجيل دفعة بطريقة «شيك» اكتب رقمه وبنكه وتاريخ استحقاقه، أو من داخل الوحدة اضغط «استلام شيكات العقد» لتسجيل كل الشيكات مرة واحدة. من صفحة «الشيكات» تتابع كل شيك: برسم التحصيل ← تم الإيداع ← تم التحصيل. إذا رجع الشيك اضغط «مرتجع»: يُلغى سنده تلقائياً وتعود الدفعة ديناً، ويمكنك فتح إجراء قانوني مباشرة.'],
 ['🔐 التأمين (الكفالة)','داخل الوحدة المؤجرة قسم «التأمين»: سجّل مبلغ التأمين المستلم فيصدر له سند. التأمين أمانة وليس ربحاً، فيظهر في الصندوق منفصلاً. عند الإخلاء: «رد التأمين» بسند صرف، أو «خصم مقابل أجرة» فيسدد الدفعات المتأخرة، أو «خصم أضرار» فيتحول المبلغ إلى إيراد. تقرير «التأمينات المحتجزة» يعرض كل تأمين وما بقي منه.'],
 ['📎 فواتير المصاريف','عند إضافة مصروف في الصندوق اضغط «📷 إرفاق فاتورة» وصوّر الفاتورة أو ارفع PDF. المصروف بدون مستند يظهر بعلامة «بدون فاتورة» وبـ ✗ في كشف الصندوق. يمكنك إرفاق المستند لاحقاً من زر «📎 إرفاق» تحت الحركة.'],
 ['🚫 إلغاء السندات','السند لا يُحذف أبداً. إذا أخطأت اضغط «إلغاء السند» واكتب السبب: يبقى السند برقمه مختوماً «ملغى» ولا يدخل في أي مجموع، ثم سجّل سنداً جديداً صحيحاً. من التقارير «سجل السندات» يعرض كل الأرقام بالتسلسل ويُنبّهك إلى أي رقم مفقود.'],
