@@ -302,9 +302,10 @@ function emptyBox(ic,txt,btn){return`<div class="card empty"><span class="ic">${
 /* ========== حالة الدفعة ========== */
 const live=a=>(a||[]).filter(p=>!p.void);
 const paidOf=i=>sum(live(i.pays),p=>p.amt);
-const rem=i=>Math.max(0,Math.round(((+i.amount||0)-paidOf(i))*1000)/1000);
+const discOf=i=>sum(live(i.discs),d=>d.amt);
+const rem=i=>Math.max(0,Math.round(((+i.amount||0)-paidOf(i)-discOf(i))*1000)/1000);
 function syncInst(i){i.pays=i.pays||[];const pa=paidOf(i),last=[...live(i.pays)].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).pop();
-  i.paidAmount=pa;i.paid=live(i.pays).length>0&&rem(i)<=0.0005;i.paidDate=last?last.date:undefined;i.payMethod=last?last.method:undefined;i.rno=last?last.rno:undefined;
+  i.paidAmount=pa;i.paid=(live(i.pays).length>0||live(i.discs).length>0)&&rem(i)<=0.0005;i.paidDate=last?last.date:undefined;i.payMethod=last?last.method:undefined;i.rno=last?last.rno:undefined;
   if(!live(i.pays).length){delete i.paidAmount;delete i.paidDate;delete i.payMethod;delete i.rno}}
 function allPays(f,t){const L=[];D.inst.forEach(i=>{const c=C(i.cid);if(!c)return;live(i.pays).forEach(p=>{if(p.date>=f&&p.date<=t)L.push({i,c,p})})});return L}
 function st(i){if(i.paid)return'paid';const d=days(today(),i.due);if(d<0)return'late';if(d<=7)return'soon';return'up'}
@@ -322,16 +323,19 @@ function instCard(i){
   const t=T(c.tid),p=P(c.pid),s=st(i);
   const chk=i.method==='شيك'?` • 🧾 شيك${i.checkNo?' رقم '+esc(i.checkNo):''}${i.bank?' - '+esc(i.bank):''}`:'';
   let btns;
-  const pl=(i.pays||[]).map(p=>p.void?`<div class="payl void"><div class="row"><span>🚫 <b>سند ${p.rno||''} — ملغى</b> • ${fmtDate(p.date)}</span><s class="amt">${money(p.amt)}</s></div>
+  let pl=(i.pays||[]).map(p=>p.void?`<div class="payl void"><div class="row"><span>🚫 <b>سند ${p.rno||''} — ملغى</b> • ${fmtDate(p.date)}</span><s class="amt">${money(p.amt)}</s></div>
     <p class="mut">سبب الإلغاء: ${esc(p.void.reason)} • ${fmtDate(p.void.date)}${p.void.by?' • '+esc(p.void.by):''}</p><div class="btns"><button class="btn b-l" onclick="rcpt('${i.id}','${p.id}')">🧾 عرض السند الملغى</button></div></div>`
     :`<div class="payl"><div class="row"><span>🧾 <b>${p.rno?'سند '+p.rno:'دفعة'}</b> • ${fmtDate(p.date)} • ${esc(p.method||'')}${p.chq?' '+chqTag(p.chq):''}</span><b class="amt in">${money(p.amt)}</b></div>
     <div class="btns"><button class="btn b-g" onclick="rcpt('${i.id}','${p.id}')">🧾 السند</button>${t&&t.phone?`<button class="btn b-w" onclick="rcptWa('${i.id}','${p.id}')">💬 إرسال</button>`:''}<button class="btn b-l" onclick="voidForm('pay','${i.id}','${p.id}')">🚫 إلغاء السند</button></div></div>`).join('');
+  const dl=(i.discs||[]).map(d=>`<div class="payl ${d.void?'void':''}" style="background:#fff8e6;border-color:#ecd9a6"><div class="row"><span>✂️ <b>خصم/إعفاء خص-${d.no}</b>${d.void?' — ملغى':''} • ${fmtDate(d.date)}</span><b>${d.void?'<s>'+money(d.amt)+'</s>':money(d.amt)}</b></div><p class="mut">${esc(d.reason)}${d.by?' • موافقة: '+esc(d.by):''}</p>
+    <div class="btns"><button class="btn b-l" onclick="discVch('${i.id}','${d.id}')">🧾 الإشعار</button>${d.void?'':`<button class="btn b-l" onclick="voidForm('disc','${i.id}','${d.id}')">🚫 إلغاء</button>`}</div></div>`).join('');
+  pl=pl+dl;
   if(i.paid){
     btns=pl;
   }else{
     btns=pl+`<div class="btns"><button class="btn b-g big" onclick="payForm('${i.id}')">${paidOf(i)>0?'➕ تسجيل دفعة أخرى':'✅ تم الدفع'}</button>
     ${t&&t.phone?`<button class="btn b-w" onclick="remind('${i.id}')">💬 تذكير</button><a class="btn b-l" href="tel:${esc(t.phone)}">📞 اتصال</a>`:''}</div>
-    <div class="btns"><button class="btn b-l" onclick="instEdit('${i.id}')">✏️ تعديل الدفعة</button></div>`;
+    <div class="btns"><button class="btn b-l" onclick="instEdit('${i.id}')">✏️ تعديل الدفعة</button><button class="btn b-l" onclick="discForm('${i.id}')">✂️ خصم / إعفاء</button></div>`;
   }
   return`<div class="card ${s}">
     <div class="row"><div><div class="nm">${esc(t?t.name:'—')}</div><div class="mut">${esc(p?p.name:'')} • ${esc(unitName(p,c.uid))}</div></div><div style="text-align:end"><div class="amt">${money(i.amount)}</div>${!i.paid&&paidOf(i)>0?`<div class="mut" style="font-size:.78rem">دُفع ${money(paidOf(i))} • الباقي <b>${money(rem(i))}</b></div>`:''}${i.svc?`<div class="mut" style="font-size:.78rem">إيجار ${money(i.amount-i.svc)} + خدمات ${money(i.svc)}</div>`:''}</div></div>
@@ -453,7 +457,8 @@ function propForm(id){
   <label>العنوان / المنطقة</label><input id="f_addr" value="${p?esc(p.address):''}" placeholder="مثال: عمّان - بيادر وادي السير">
   <div class="card soft mt"><div class="nm">🏛️ المسقفات والمعارف (سنوياً)</div><p class="mut">اختياري — ضريبة الأبنية والأراضي وضريبة المعارف السنوية.</p>
     <div class="row2"><div><label>المسقفات (د.أ)</label><input id="f_masq" type="number" inputmode="decimal" value="${p&&p.masq?p.masq:''}"></div>
-    <div><label>المعارف (د.أ)</label><input id="f_maaref" type="number" inputmode="decimal" value="${p&&p.maaref?p.maaref:''}"></div></div></div>
+    <div><label>المعارف (د.أ)</label><input id="f_maaref" type="number" inputmode="decimal" value="${p&&p.maaref?p.maaref:''}"></div></div>
+    <label>قيمة العقار التقديرية (اختياري — لحساب العائد السنوي)</label><input id="f_val" type="number" inputmode="decimal" value="${p&&p.value?p.value:''}"></div>
   <div class="card soft mt"><div class="nm">➕ أضف وحدات للعقار</div>
     <p class="mut">يمكنك إضافة أكثر من نوع: مثلاً 4 شقق، ثم 2 محل تجاري، ثم 3 مكاتب.</p>
     <div class="row2"><div><label>النوع</label><select id="f_type">${opts(UTYPES)}</select></div>
@@ -559,10 +564,11 @@ function saveProp(id){
   let p=id?P(id):null;
   if(p){p.name=name;p.address=val('f_addr');p.units=units}
   else{p={id:uid(),name,address:val('f_addr'),units};D.props.push(p)}
-  p.masq=+val('f_masq')||0;p.maaref=+val('f_maaref')||0;
+  p.masq=+val('f_masq')||0;p.maaref=+val('f_maaref')||0;p.value=+val('f_val')||0;
   let n=0;
   leases.forEach(u=>{const L=u.lease,{per,svcPer,dues}=leasePlan(L);
     n+=buildContract({pid:p.id,uid:u.id,tid:getTenant(L.tname,L.tphone),start:L.start,end:L.end,freq:+L.freq,amount:per,svc:svcPer,method:L.method,dues,imgs:L.imgs,raw:{a:L.amount,b:L.basis,s:L.svc,sb:L.svcBasis}})});
+  logA((id?'تعديل عقار: ':'إضافة عقار: ')+name);
   save();closeSheet();toast('تم حفظ العقار ✅'+(leases.length?` — ${leases.length} عقد و ${n} دفعة`:''));go('props');
 }
 function delProp(id){
@@ -598,6 +604,7 @@ function unitDetail(pid,unitId){
       <div class="kv"><span>قيمة العقد كاملة</span><b>${money(total)}</b></div>
       <div class="kv"><span>طريقة الدفع</span><b>${esc(c.method)}</b></div>
       <button class="btn b-l full" onclick="bulkChq('${c.id}')">🏦 استلام شيكات العقد دفعة واحدة</button>
+      <button class="btn b-l full" onclick="vatToggle('${c.id}')">🧾 ضريبة المبيعات: ${c.vat?'<b>خاضع '+vatRate()+'%</b> (اضغط للإلغاء)':'غير خاضع (اضغط للتفعيل)'}</button>
       <button class="btn b-g full big" onclick="contractEdit('${c.id}')">✏️ تعديل العقد (الأجرة، المدة، طريقة الدفع...)</button>
       <div class="btns"><button class="btn b-r" onclick="endContract('${c.id}')">🚪 إنهاء العقد / إخلاء</button></div></div>
     ${depBlock(c)}
@@ -625,7 +632,7 @@ function unitDetail(pid,unitId){
 }
 function endContract(cid){
   if(!confirm('إنهاء العقد اليوم وإخلاء الوحدة؟\nستُحذف الدفعات القادمة غير المستحقة، وتبقى الدفعات المتأخرة مسجّلة على المستأجر.'))return;
-  const c=C(cid),td=today();c.end=td;
+  const c=C(cid),td=today();c.end=td;logA('إنهاء عقد: '+(T(c.tid)||{}).name);
   D.inst=D.inst.filter(i=>!(i.cid===cid&&!i.paid&&!paidOf(i)&&i.due>=td));
   after('تم إنهاء العقد — الوحدة الآن شاغرة'+(depBal(c)>0?' • تذكير: تأمين محتجز '+money(depBal(c))+' — ردّه أو اخصم منه':''));
 }
@@ -659,6 +666,7 @@ function saveContractEdit(cid){
   D.inst=D.inst.filter(i=>!(i.cid===cid&&!i.paid&&!paidOf(i)));
   let n=0;
   dues.filter(d=>d>lastPaid).forEach(d=>{const o=old[d]||{};D.inst.push({id:uid(),cid,due:d,amount:r3(per+svcPer),svc:svcPer,method:L.method,checkNo:o.checkNo||'',bank:o.bank||'',paid:false,pays:[]});n++});
+  logA('تعديل عقد: '+(T(c.tid)||{}).name+' — '+money(per)+' '+(FREQ[c.freq]||''));
   after(`تم حفظ تعديلات العقد ✅ — ${n} دفعة قادمة`);
 }
 function instEdit(id){
@@ -674,10 +682,12 @@ function instEdit(id){
 }
 function saveInst(id){
   const i=I(id),a=+val('ie_a');if(!(a>0)){toast('اكتب المبلغ');return}
+  if(lockGuard(i.due)||lockGuard(val('ie_d')))return;
+  if(a!==+i.amount||val('ie_d')!==i.due)logA('تعديل دفعة: '+fmtDate(i.due)+' '+money(i.amount)+' ← '+fmtDate(val('ie_d')||i.due)+' '+money(a));
   i.due=val('ie_d')||i.due;if(i.svc&&a<i.svc)i.svc=0;i.amount=a;i.method=val('ie_m');i.checkNo=val('ie_c');i.bank=val('ie_b');syncInst(i);
   after('تم حفظ الدفعة ✅');
 }
-function delInst(id){if(!confirm('حذف هذه الدفعة؟'))return;D.inst=D.inst.filter(x=>x.id!==id);after('تم حذف الدفعة')}
+function delInst(id){const i=I(id);if((i.pays||[]).length||(i.discs||[]).length){toast('لا يمكن حذف دفعة عليها سندات — ألغِ السندات أو استخدم «خصم / إعفاء»');return}if(lockGuard(i.due))return;if(!confirm('حذف هذه الدفعة؟'))return;logA('حذف دفعة مستحقة '+fmtDate(i.due)+' — '+money(i.amount));D.inst=D.inst.filter(x=>x.id!==id);after('تم حذف الدفعة')}
 function unitEdit(pid,unitId){
   const u=P(pid).units.find(x=>x.id===unitId);
   openSheet('تعديل الوحدة',`<label>اسم الوحدة</label><input id="ue_n" value="${esc(u.name)}">
@@ -811,6 +821,7 @@ function saveRent(pid,unitId){
   const L=tmpUnits[0].lease,e=leaseErr(L,tmpUnits[0].name);if(e){toast(e);return}
   const{per,svcPer,dues}=leasePlan(L);
   const n=buildContract({pid,uid:unitId,tid:getTenant(L.tname,L.tphone),start:L.start,end:L.end,freq:+L.freq,amount:per,svc:svcPer,method:L.method,dues,imgs:L.imgs,raw:{a:L.amount,b:L.basis,s:L.svc,sb:L.svcBasis}});
+  logA('تأجير '+(P(pid).units.find(x=>x.id===unitId)||{}).name+' — '+P(pid).name+' للمستأجر '+L.tname);
   save();render();unitDetail(pid,unitId);toast(`تم التأجير ✅ — ${n} دفعة`);
 }
 
@@ -887,7 +898,7 @@ function tenantsSheet(){
     ${cs.map(c=>{const p=P(c.pid),u=p&&p.units.find(x=>x.id===c.uid);
       return`<button class="unit on mt" style="width:100%" onclick="unitDetail('${c.pid}','${c.uid}')">${u?ic(u.type):''} ${esc(p?p.name:'')} • ${esc(u?u.name:'')}<small>حتى ${fmtDate(c.end)} • اضغط لعرض التفاصيل</small></button>`}).join('')}
     ${t.phone?`<div class="btns"><a class="btn b-l" href="tel:${esc(t.phone)}">📞 ${esc(t.phone)}</a><a class="btn b-w" href="https://wa.me/${waNum(t.phone)}" target="_blank">💬 واتساب</a></div>`:''}
-    <div class="btns"><button class="btn b-l" onclick="repTenant('${t.id}')">🖨️ كشف حساب</button></div></div>`).join(''));
+    <div class="btns"><button class="btn b-l" onclick="repTenant('${t.id}')">🖨️ كشف حساب</button><button class="btn b-l" onclick="repLedger('${t.id}')">📒 مدين / دائن</button></div></div>`).join(''));
 }
 function contractInst(cid){
   ctx=()=>contractInst(cid);
@@ -933,15 +944,17 @@ function doPay(id){
   if(a>rem(i)+0.0005&&!confirm('المبلغ ('+money(a)+') أكبر من الباقي على هذه الدفعة ('+money(rem(i))+'). متابعة؟'))return;
   const m=val('f_m'),rd=val('f_date')||today();
   if(m==='شيك'&&!val('f_cn').trim()){toast('اكتب رقم الشيك');return}
-  const p={id:uid(),amt:a,date:m==='شيك'?(val('f_cd')||rd):rd,method:m,acct:m==='شيك'?'':val('f_acct'),note:val('f_note'),rno:nextNo('r')};
+  if(lockGuard(rd))return;
+  const p={id:uid(),vr:vrOf(i.cid),amt:a,date:m==='شيك'?(val('f_cd')||rd):rd,method:m,acct:m==='شيك'?'':val('f_acct'),note:val('f_note'),rno:nextNo('r')};
   if(m==='شيك'){p.chq={no:val('f_cn').trim(),bank:val('f_cb').trim(),due:p.date,recv:rd,st:'held',h:[{st:'held',date:rd}]};i.checkNo=p.chq.no;i.bank=p.chq.bank}
   i.pays=i.pays||[];i.pays.push(p);syncInst(i);
+  {const c=C(i.cid),t=c&&T(c.tid);logA('سند قبض '+p.rno+' — '+money(a)+' — '+(t?t.name:'')+' ('+m+')')}
   after('تم تسجيل الدفعة ✅ — سند قبض رقم '+p.rno+(i.paid?'':' • الباقي '+money(rem(i))));
   rcpt(id,p.id);
 }
 function voidForm(kind,a,b){
-  const x=kind==='pay'?(I(a).pays||[]).find(p=>p.id===b):kind==='dep'?C(a).dep:kind==='depm'?(C(a).dep.moves||[]).find(m=>m.id===b):(D.cash||[]).find(c=>c.id===a);if(!x)return;
-  const no=kind==='pay'?x.rno:kind==='dep'?'ت-'+x.no:kind==='depm'?(x.type==='refund'?'تر-':'تخ-')+x.no:(x.kind==='out'?'ص-':'ق-')+x.no;
+  const x=kind==='pay'?(I(a).pays||[]).find(p=>p.id===b):kind==='disc'?(I(a).discs||[]).find(p=>p.id===b):kind==='dep'?C(a).dep:kind==='depm'?(C(a).dep.moves||[]).find(m=>m.id===b):(D.cash||[]).find(c=>c.id===a);if(!x)return;
+  const no=kind==='pay'?x.rno:kind==='disc'?'خص-'+x.no:kind==='dep'?'ت-'+x.no:kind==='depm'?(x.type==='refund'?'تر-':'تخ-')+x.no:(x.kind==='out'?'ص-':'ق-')+x.no;
   openSheet('🚫 إلغاء سند',`<div class="card warn" style="text-align:start"><div class="nm">إلغاء السند رقم ${no} — ${money(x.amt??x.amount)}</div>
   <p>السند لا يُحذف: يبقى برقمه في السجل مختوماً «ملغى» مع السبب، ولا يدخل في أي مجموع. للتصحيح سجّل سنداً جديداً بالمبلغ الصحيح.</p></div>
   <label>سبب الإلغاء (إجباري)</label><input id="v_r" placeholder="مثال: خطأ في المبلغ / شيك مرتجع / سُجّل مرتين">
@@ -951,11 +964,13 @@ function voidForm(kind,a,b){
 function doVoid(kind,a,b){
   const r=val('v_r').trim();if(r.length<3){toast('اكتب سبب الإلغاء');return}
   const v={date:today(),reason:r,by:nameOf(cur)};
+  if(lockedFor(kind,a,b))return;
   if(kind==='pay'){const i=I(a),p=i.pays.find(y=>y.id===b);p.void=v;syncInst(i)}
+  else if(kind==='disc'){const i=I(a),d=i.discs.find(y=>y.id===b);d.void=v;syncInst(i)}
   else if(kind==='dep'){C(a).dep.void=v}
   else if(kind==='depm'){const m=C(a).dep.moves.find(y=>y.id===b);m.void=v;(m.pays||[]).forEach(([ii,pp])=>{const i=I(ii);if(!i)return;const y=(i.pays||[]).find(z=>z.id===pp);if(y){y.void={...v,reason:'إلغاء الخصم من التأمين: '+v.reason}}syncInst(i)})}
   else{(D.cash||[]).find(c=>c.id===a).void=v}
-  closeAll();after('تم إلغاء السند — بقي في السجل مختوماً «ملغى»');if(kind==='cash')cashSheet();
+  logA('إلغاء سند '+(kind==='pay'?(I(a).pays.find(y=>y.id===b)||{}).rno:kind)+' — السبب: '+r);closeAll();after('تم إلغاء السند — بقي في السجل مختوماً «ملغى»');if(kind==='cash')cashSheet();
 }
 function remind(id){
   const i=I(id),c=C(i.cid),t=T(c.tid),p=P(c.pid);
@@ -995,6 +1010,9 @@ function settings(){
   <button class="btn b-g full" onclick="changePw()">🔑 تغيير كلمة السر</button>
   <button class="btn b-l full" onclick="lockNow()">🔒 قفل التطبيق الآن</button>
   <p class="mut mt">🔒 يُقفل التطبيق فوراً عند الخروج منه أو إطفاء الشاشة، ويطلب كلمة السر في كل مرة.</p></div>`;
+  if(isOwner())h+=`<div class="card"><div class="nm">🧾 نسبة ضريبة المبيعات</div><p class="mut">تُطبَّق فقط على العقود التي تفعّل لها الضريبة من داخل الوحدة. تأكد من محاسبك أي العقود خاضعة.</p>
+    <div class="row2"><div><input id="s_vat" type="number" inputmode="decimal" value="${vatRate()}"></div><div><button class="btn b-l full" onclick="D.settings.vat=+val('s_vat')||0;logA('نسبة ضريبة المبيعات '+D.settings.vat+'%');save();toast('تم الحفظ ✅')">💾 حفظ %</button></div></div></div>
+  <div class="card"><div class="nm">🔒 إقفال الفترة وسجل العمليات</div><div class="btns"><button class="btn b-l" onclick="closeForm()">🔒 إقفال الفترة</button><button class="btn b-l" onclick="logSheet()">📜 سجل العمليات</button></div></div>`;
   if(isOwner())h+=`<div class="card"><div class="nm">💾 تصدير واستعادة البيانات</div>${dataHtml()}</div>
   <div class="card"><div class="nm">🗑️ حذف كل البيانات</div><button class="btn b-r full" onclick="wipeAsk()">🗑️ مسح جميع البيانات</button></div>`;
   openSheet('الإعدادات',h);
@@ -1315,6 +1333,13 @@ function reportsSheet(){
   <button class="btn b-g full big" onclick="repVouchers()">🧾 سجل السندات (للتدقيق)</button>
   <button class="btn b-g full big" onclick="repDeps()">🔐 تقرير التأمينات المحتجزة</button>
   <button class="btn b-g full big" onclick="closeAll();chqPer='held';chequesSheet()">🏦 الشيكات وتقريرها</button>
+  <button class="btn b-g full big" onclick="repAging()">⏳ أعمار الذمم (المتأخرات حسب المدة)</button>
+  <button class="btn b-g full big" onclick="repPL()">📊 قائمة الدخل (نقدي واستحقاقي)</button>
+  <button class="btn b-g full big" onclick="repOcc()">🏘️ الإشغال والعائد السنوي</button>
+  <div class="sec">🧮 للمحاسب والمدقق</div>
+  <button class="btn b-l full big" onclick="csvJournal()">📒 تصدير دفتر اليومية (Excel)</button>
+  <button class="btn b-l full big" onclick="logSheet()">📜 سجل العمليات</button>
+  ${isOwner()?`<button class="btn b-l full big" onclick="closeForm()">🔒 إقفال الفترة${D.settings.closed?' (مقفل حتى '+fmtDate(D.settings.closed)+')':''}</button>`:''}
   <div class="card soft mt"><div class="nm">💵 تقرير التحصيل لفترة</div>
     <div class="row2"><div><label>من</label><input type="date" id="r_from" value="${m}"></div><div><label>إلى</label><input type="date" id="r_to" value="${today()}"></div></div>
     <button class="btn b-g full" onclick="repCollect()">عرض تقرير التحصيل</button></div>
@@ -1322,7 +1347,7 @@ function reportsSheet(){
   <div class="card"><div class="nm">🏢 تقرير عقار</div><select id="r_p" class="mt">${opts(D.props.map(p=>[p.id,p.name]))}</select>
     <button class="btn b-l full" onclick="repProp(val('r_p'))">🖨️ عرض تقرير العقار</button></div>
   <div class="card"><div class="nm">👤 كشف حساب مستأجر</div><select id="r_t" class="mt">${opts(D.tenants.map(t=>[t.id,t.name]))}</select>
-    <button class="btn b-l full" onclick="repTenant(val('r_t'))">🖨️ عرض كشف الحساب</button></div>
+    <button class="btn b-l full" onclick="repTenant(val('r_t'))">🖨️ عرض كشف الحساب</button><button class="btn b-l full" onclick="repLedger(val('r_t'))">📒 كشف مدين / دائن</button></div>
   ${allPartners().length?`<div class="card"><div class="nm">🤝 كشف حساب شريك</div><select id="r_pt" class="mt">${opts(allPartners())}</select>
     <div class="row2"><div><label>من</label><input type="date" id="r_pf" value="${today().slice(0,4)}-01-01"></div><div><label>إلى</label><input type="date" id="r_pto" value="${today()}"></div></div>
     <button class="btn b-l full" onclick="repPartner(val('r_pt'),val('r_pf'),val('r_pto'))">🖨️ عرض كشف الشريك</button></div>`:''}
@@ -1372,8 +1397,8 @@ function instVch(id,payId){
   const y=(i.pays||[]).find(x=>x.id===payId)||(i.pays||[]).slice(-1)[0]||{};
   if(!y.rno){y.rno=nextNo('r');syncInst(i);save()}
   const about=`إيجار ${p?p.name:''} - ${unitName(p,c&&c.uid)} عن الدفعة المستحقة بتاريخ ${fmtDate(i.due)}${i.svc?' (شاملة أجور خدمات '+money(i.svc)+')':''}`;
-  const part=(+y.amt||0)<(+i.amount||0)-0.0005;
-  return{void:y.void,kind:'in',no:y.rno,date:y.chq?y.chq.recv:y.date,party:t?t.name:'',amount:y.amt,about:about+(part?` — دفعة جزئية من أصل ${money(i.amount)}${i.paid?'':'، الباقي '+money(rem(i))}`:''),method:y.method,check:y.chq?('شيك رقم '+y.chq.no+(y.chq.bank?' - '+y.chq.bank:'')+' — مستحق '+fmtDate(y.chq.due)+(y.chq.st==='cleared'?' (محصّل)':' (برسم التحصيل)')):'',note:y.note,phone:t&&t.phone};
+  const part=(+y.amt||0)<(+i.amount||0)-0.0005,vt=vatP(y);
+  return{void:y.void,kind:'in',no:y.rno,date:y.chq?y.chq.recv:y.date,party:t?t.name:'',amount:y.amt,about:about+(part?` — دفعة جزئية من أصل ${money(i.amount)}${i.paid?'':'، الباقي '+money(rem(i))}`:'')+(vt?` — المبلغ شامل ضريبة المبيعات ${y.vr}%: الصافي ${money((+y.amt)-vt)} + الضريبة ${money(vt)}`:''),method:y.method,check:y.chq?('شيك رقم '+y.chq.no+(y.chq.bank?' - '+y.chq.bank:'')+' — مستحق '+fmtDate(y.chq.due)+(y.chq.st==='cleared'?' (محصّل)':' (برسم التحصيل)')):'',note:y.note,phone:t&&t.phone};
 }
 function rcpt(id,pid){vchOpen(instVch(id,pid),true)}
 function rcptWa(id,pid){
@@ -1384,8 +1409,8 @@ function rcptWa(id,pid){
 
 /* ========== الصندوق: الإيرادات والمصروفات ========== */
 const CASH_IN=['عربون','بيع / تعويض','أخرى'];
-const CASH_OUT=['صيانة وإصلاح','كهرباء وماء','نظافة وحراسة','رواتب','عمولة مكتب','ضرائب ورسوم','محامي وقضايا','سحب المالك','أخرى'];
-const CASH_IC={'تأمين مستلم (أمانة)':'🔐','رد تأمين':'↩️','تحويل من الأمانات':'🔁','خصم من التأمين (أضرار)':'🛠️','عربون':'🔐','إيجار':'🏠','مسقفات ومعارف':'🏛️','صيانة وإصلاح':'🔧','كهرباء وماء':'💡','نظافة وحراسة':'🧹','رواتب':'👷','عمولة مكتب':'🤝','ضرائب ورسوم':'🧾','محامي وقضايا':'⚖️','سحب المالك':'👤','تأمين / عربون':'🔐','بيع / تعويض':'💼','أخرى':'📌'};
+const CASH_OUT=['توزيع على الشركاء','صيانة وإصلاح','كهرباء وماء','نظافة وحراسة','رواتب','عمولة مكتب','ضرائب ورسوم','محامي وقضايا','سحب المالك','أخرى'];
+const CASH_IC={'تأمين مستلم (أمانة)':'🔐','رد تأمين':'↩️','تحويل من الأمانات':'🔁','خصم من التأمين (أضرار)':'🛠️','عربون':'🔐','إيجار':'🏠','مسقفات ومعارف':'🏛️','صيانة وإصلاح':'🔧','كهرباء وماء':'💡','نظافة وحراسة':'🧹','رواتب':'👷','عمولة مكتب':'🤝','ضرائب ورسوم':'🧾','محامي وقضايا':'⚖️','سحب المالك':'👤','توزيع على الشركاء':'🤝','تأمين / عربون':'🔐','بيع / تعويض':'💼','أخرى':'📌'};
 let cashPer='m';
 function catsOf(k){const c=(D.settings.cats||{})[k]||[];const base=k==='out'?CASH_OUT:CASH_IN;return[...base.filter(x=>x!=='أخرى'),...c,'أخرى']}
 function catAdd(k,n){n=(n||'').trim();if(!n)return'';D.settings.cats=D.settings.cats||{in:[],out:[]};const L=D.settings.cats[k]=D.settings.cats[k]||[];if(!catsOf(k).includes(n))L.push(n);return n}
@@ -1411,7 +1436,7 @@ function cashMoves(f,to){
       if(m.type==='refund')L.push({src:'dep',cid:c.id,mid:m.id,lia:true,kind:'out',date:m.date,amount:+m.amt||0,cat:'رد تأمين',no:nn,desc:ds+(m.reason?' — '+m.reason:''),method:m.method,pid:c.pid});
       else{L.push({src:'dep',cid:c.id,mid:m.id,lia:true,kind:'out',date:m.date,amount:+m.amt||0,cat:'تحويل من الأمانات',no:nn,desc:ds+' — '+(m.type==='rent'?'خصم مقابل أجرة متأخرة':m.reason),pid:c.pid});
         if(m.type==='damage')L.push({src:'dep',cid:c.id,mid:m.id,kind:'in',date:m.date,amount:+m.amt||0,cat:'خصم من التأمين (أضرار)',no:nn,desc:ds+' — '+m.reason,pid:c.pid})}})});
-  live(D.cash).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',id:x.id,imgs:(x.imgs||[]).length,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
+  live(D.cash).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',pid:x.pid,eq:x.kind==='out'&&(x.cat==='سحب المالك'||x.cat==='توزيع على الشركاء'),id:x.id,imgs:(x.imgs||[]).length,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
   return L.filter(x=>x.date&&x.date>=f&&x.date<=to).sort((a,b)=>b.date.localeCompare(a.date)||(b.no||0)-(a.no||0));
 }
 function voidList(f,to){const V=[];
@@ -1421,18 +1446,19 @@ function voidList(f,to){const V=[];
 function repVouchers(f,to){
   f=f||'0000-01-01';to=to||'9999-12-31';const R=[];
   D.inst.forEach(i=>{const c=C(i.cid),t=c&&T(c.tid),p=c&&P(c.pid);(i.pays||[]).forEach(y=>R.push({s:'r',n:+y.rno||0,no:y.rno,type:'سند قبض (إيجار)',date:y.date,amt:y.amt,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c&&c.uid),v:y.void}))});
+  D.inst.forEach(i=>{const c=C(i.cid),t=c&&T(c.tid);(i.discs||[]).forEach(x=>R.push({s:'w',n:+x.no||0,no:'خص-'+x.no,type:'إشعار خصم / إعفاء',date:x.date,amt:x.amt,desc:(t?t.name:'')+' — '+x.reason,v:x.void}))});
   D.contracts.forEach(c=>{const d=c.dep;if(!d)return;const t=T(c.tid),nm=t?t.name:'';R.push({s:'d',n:+d.no||0,no:'ت-'+d.no,type:'سند قبض تأمين',date:d.date,amt:d.amt,desc:nm,v:d.void});
     (d.moves||[]).forEach(m=>R.push({s:m.type==='refund'?'dr':'dd',n:+m.no||0,no:(m.type==='refund'?'تر-':'تخ-')+m.no,type:m.type==='refund'?'سند رد تأمين':'إشعار خصم من التأمين',date:m.date,amt:m.amt,desc:nm+(m.reason?' — '+m.reason:''),v:m.void}))});
   (D.cash||[]).forEach(x=>R.push({s:x.kind==='out'?'x':'k',n:+x.no||0,no:(x.kind==='out'?'ص-':'ق-')+x.no,type:x.kind==='out'?'سند صرف':'سند قبض (أخرى)',date:x.date,amt:x.amount,desc:[x.cat,x.party].filter(Boolean).join(' — '),v:x.void}));
   const L=R.filter(x=>x.date>=f&&x.date<=to).sort((a,b)=>a.s.localeCompare(b.s)||(!!a.n-!!b.n)||a.n-b.n||(a.date||'').localeCompare(b.date||''));
-  const PF={x:'ص-',k:'ق-',d:'ت-',dr:'تر-',dd:'تخ-',r:''};const gaps=[];['r','k','x','d','dr','dd'].forEach(k=>{const ns=R.filter(x=>x.s===k&&x.n).map(x=>x.n).sort((a,b)=>a-b);for(let j=1;j<ns.length;j++)for(let m=ns[j-1]+1;m<ns[j];m++)gaps.push(PF[k]+m)});
+  const PF={x:'ص-',k:'ق-',d:'ت-',dr:'تر-',dd:'تخ-',w:'خص-',r:''};const gaps=[];['r','k','x','d','dr','dd','w'].forEach(k=>{const ns=R.filter(x=>x.s===k&&x.n).map(x=>x.n).sort((a,b)=>a-b);for(let j=1;j<ns.length;j++)for(let m=ns[j-1]+1;m<ns[j];m++)gaps.push(PF[k]+m)});
   const rows=L.map(x=>tr([x.no||'<span class="mut">قبل الترقيم</span>',esc(x.type),fmtDate(x.date),esc(x.desc),x.v?`<s>${money(x.amt)}</s>`:money(x.amt),x.v?`<b class="red">ملغى</b> — ${esc(x.v.reason)}`:'ساري'],x.v?'late':''));
   openRep(rHead('سجل السندات',f.startsWith('0000')?'كل الفترات':`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
     rBoxes([['عدد السندات',L.length],['السارية',L.filter(x=>!x.v).length,'g'],['الملغاة',L.filter(x=>x.v).length,'r'],['أرقام مفقودة',gaps.length,gaps.length?'r':'g']])+
     (gaps.length?`<p class="red"><b>⚠️ أرقام غير موجودة في التسلسل:</b> ${gaps.slice(0,60).join('، ')}</p>`:'<p>✅ التسلسل كامل بدون فجوات.</p>')+(L.some(x=>!x.n)?'<p class="mut">«قبل الترقيم»: دفعات سُجّلت قبل إضافة ترقيم السندات للتطبيق.</p>':'')+
     tbl(['رقم السند','النوع','التاريخ','البيان','المبلغ','الحالة'],rows));
 }
-function cashTot(L){const R=L.filter(x=>!x.lia),H=L.filter(x=>x.lia);const i=sum(R.filter(x=>x.kind==='in'),x=>x.amount),o=sum(R.filter(x=>x.kind==='out'),x=>x.amount),h=sum(H.filter(x=>x.kind==='in'),x=>x.amount)-sum(H.filter(x=>x.kind==='out'),x=>x.amount);return{i,o,b:i-o,h,c:i-o+h}}
+function cashTot(L){const R=L.filter(x=>!x.lia&&!x.eq),H=L.filter(x=>x.lia),e=sum(L.filter(x=>x.eq),x=>x.amount);const i=sum(R.filter(x=>x.kind==='in'),x=>x.amount),o=sum(R.filter(x=>x.kind==='out'),x=>x.amount),h=sum(H.filter(x=>x.kind==='in'),x=>x.amount)-sum(H.filter(x=>x.kind==='out'),x=>x.amount);return{i,o,b:i-o,h,e,c:i-o+h-e}}
 function cashSheet(){
   ctx=()=>cashSheet();const[f,to]=cashRange(cashPer),L=cashMoves(f,to),T0=cashTot(L),all=cashTot(cashMoves('0000-01-01','9999-12-31'));
   const P0={m:'هذا الشهر',y:'هذه السنة',a:'الكل'};
@@ -1441,11 +1467,12 @@ function cashSheet(){
     ${x.src==='inst'?`<div class="btns"><button class="btn b-l" onclick="rcpt('${x.id}','${x.pay}')">🧾 سند القبض</button></div>`:''}
     ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-l" onclick="cashFiles('${x.id}')">📎 ${x.imgs?'الفاتورة':'إرفاق'}</button><button class="btn b-r" onclick="voidForm('cash','${x.id}')">🚫 إلغاء</button></div>`:''}</div>`;
   openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.c<0?'out':'in'}">${money(all.c)}</b></div>
+  ${all.e?`<div class="row mt"><span class="mut">سحوبات المالك وتوزيعات الشركاء (كل الفترات)</span><b>${money(all.e)}</b></div>`:''}
   ${all.h?`<div class="row mt"><span class="mut">منها 🔐 تأمينات محتجزة (أمانة للمستأجرين — ليست ربحاً)</span><b>${money(all.h)}</b></div><div class="row"><span class="mut">صافي ما يخصّك</span><b>${money(all.b)}</b></div>`:''}</div>
   ${acctsHtml()}
   <div class="btns"><button class="btn b-g big" onclick="cashForm('in')">➕ إيراد</button><button class="btn b-r big" onclick="cashForm('out')">➖ مصروف</button></div>
   <div class="chips">${Object.keys(P0).map(k=>`<button class="chip ${k===cashPer?'on':''}" onclick="cashPer='${k}';cashSheet()">${P0[k]}</button>`).join('')}</div>
-  <div class="stats"><div class="stat"><span>⬆️ الإيرادات</span><b>${money(T0.i)}</b></div><div class="stat red"><span>⬇️ المصروفات</span><b>${money(T0.o)}</b></div><div class="stat gold" style="grid-column:1/-1"><span>📊 الصافي ${P0[cashPer]||''}</span><b>${money(T0.b)}</b></div></div>
+  <div class="stats"><div class="stat"><span>⬆️ الإيرادات</span><b>${money(T0.i)}</b></div><div class="stat red"><span>⬇️ المصروفات</span><b>${money(T0.o)}</b></div><div class="stat gold" style="grid-column:1/-1"><span>📊 صافي الدخل ${P0[cashPer]||''}</span><b>${money(T0.b)}</b>${T0.e?`<span>سحوبات وتوزيعات: ${money(T0.e)}</span>`:''}</div></div>
   <div class="card soft"><div class="nm">🖨️ كشف الصندوق لفترة</div><div class="row2"><div><label>من</label><input type="date" id="k_from" value="${f.startsWith('0000')?today().slice(0,8)+'01':f}"></div><div><label>إلى</label><input type="date" id="k_to" value="${to.startsWith('9999')?today():to}"></div></div>
   <button class="btn b-g full" onclick="repCash()">عرض كشف الصندوق</button></div>
   <button class="btn b-l full" onclick="catsSheet()">📋 أنواع المصاريف والإيرادات</button>
@@ -1478,10 +1505,12 @@ function cashSave(kind,id){
   const a=+val('k_amt');if(!a||a<=0){toast('اكتب المبلغ');return}
   if(kind==='out'&&!tmpCash.length&&!confirm('لم تُرفق صورة الفاتورة.\nالمصروف بدون مستند لا يقبله المدقق. حفظ بدون مرفق؟'))return;
   if(val('k_cat')==='__new'&&!val('k_nc').trim()){toast('اكتب اسم النوع الجديد');return}
+  if(lockGuard(val('k_date')||today()))return;
   D.cash=D.cash||[];let x=id&&D.cash.find(c=>c.id===id);
   if(!x){x={id:uid(),kind,no:nextNo(kind==='out'?'x':'k')};D.cash.push(x)}
   let cat=val('k_cat');if(cat==='__new'){cat=catAdd(kind,val('k_nc'));if(!cat){toast('اكتب اسم النوع الجديد');return}}
   Object.assign(x,{amount:a,date:val('k_date')||today(),cat,party:val('k_party'),pid:val('k_pid'),method:val('k_m'),acct:val('k_acct'),note:val('k_note'),imgs:[...tmpCash],by:typeof cur!=='undefined'?nameOf(cur):''});
+  logA((kind==='out'?'سند صرف ص-':'سند قبض ق-')+x.no+' — '+x.cat+' — '+money(a));
   save();render();cashSheet();toast((kind==='out'?'تم حفظ المصروف — سند صرف رقم ':'تم حفظ الإيراد — سند قبض رقم ')+x.no);
 }
 function cashDel_old(id){if(!confirm('حذف هذه الحركة من الصندوق؟'))return;D.cash=D.cash.filter(c=>c.id!==id);save();cashSheet();toast('تم الحذف')}
@@ -1504,7 +1533,7 @@ function repCash(){
   const rows=L.map(x=>{bal+=x.kind==='in'?x.amount:-x.amount;const k=(x.kind==='in'?'⬆️ ':'⬇️ ')+x.cat;byC[k]=(byC[k]||0)+x.amount;
     return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.src==='cash'?(x.imgs?'✔':(x.kind==='out'?'<b class="red">✗</b>':'—')):'—',x.kind==='in'?money(x.amount)+(x.lia?' 🔐':''):'',x.kind==='out'?`<b class="red">${money(x.amount)}</b>`+(x.lia?' 🔐':''):'',money(bal)])});
   openRep(rHead('كشف الصندوق: الإيرادات والمصروفات',`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
-    rBoxes([['الرصيد السابق',money(prev)],['الإيرادات',money(T0.i),'g'],['المصروفات',money(T0.o),'r'],['الصافي للفترة',money(T0.b),'o'],['حركة التأمينات (أمانات)',money(T0.h)],['الرصيد الحالي',money(prev+T0.c),'g']])+
+    rBoxes([['الرصيد السابق',money(prev)],['الإيرادات',money(T0.i),'g'],['المصروفات',money(T0.o),'r'],['صافي الدخل للفترة',money(T0.b),'o'],['سحوبات وتوزيعات',money(T0.e)],['حركة التأمينات (أمانات)',money(T0.h)],['الرصيد الحالي',money(prev+T0.c),'g']])+
     `<h2>حسب البند</h2>`+tbl(['البند','المبلغ'],Object.entries(byC).map(([k,v])=>tr([esc(k),money(v)])))+
     `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','مستند','إيراد','مصروف','الرصيد'],rows,['المجموع','','','','',money(T0.i),money(T0.o),money(prev+T0.c)])+'<p class="mut">🔐 = حركة تأمين (أمانة): تدخل في رصيد الصندوق النقدي لكنها ليست إيراداً ولا مصروفاً.</p>'+(L.some(x=>x.src==='cash'&&x.kind==='out'&&!x.imgs)?'<p class="red">✗ = مصروف بدون مستند مرفق</p>':''));
 }
@@ -1512,6 +1541,138 @@ function repCash(){
 
 
 
+
+
+/* ========== سجل العمليات وإقفال الفترة ========== */
+function logA(txt){D.log=D.log||[];D.log.push({t:new Date().toISOString(),by:typeof cur!=='undefined'?nameOf(cur):'',txt:String(txt)});if(D.log.length>5000)D.log=D.log.slice(-5000)}
+function lockGuard(d){const c=D.settings.closed;if(c&&d&&d<=c){toast('🔒 الفترة حتى '+fmtDate(c)+' مقفلة — يفتحها صاحب التطبيق من الإعدادات');return true}return false}
+function lockedFor(kind,a,b){let d;
+  if(kind==='pay'){const p=(I(a).pays||[]).find(x=>x.id===b);d=p&&(p.chq?p.chq.recv:p.date)}
+  else if(kind==='disc')d=((I(a).discs||[]).find(x=>x.id===b)||{}).date;
+  else if(kind==='dep')d=C(a).dep.date;else if(kind==='depm')d=((C(a).dep.moves||[]).find(x=>x.id===b)||{}).date;
+  else d=((D.cash||[]).find(x=>x.id===a)||{}).date;return lockGuard(d)}
+function closeForm(){
+  if(!isOwner()){toast('إقفال الفترة لصاحب التطبيق فقط');return}const c=D.settings.closed;
+  openSheet('🔒 إقفال الفترة',`<div class="card soft"><p>بعد الإقفال لا يمكن تسجيل أو تعديل أو إلغاء أي حركة بتاريخ يقع ضمن الفترة المقفلة، فتبقى الأرقام التي سلّمتها للمحاسب أو الشركاء ثابتة.</p>
+  <div class="kv"><span>مقفل حتى</span><b>${c?fmtDate(c):'لا يوجد إقفال'}</b></div></div>
+  <label>إقفال كل الحركات حتى تاريخ</label><input id="cl_d" type="date" value="${c||addDays(today().slice(0,8)+'01',-1)}">
+  <button class="btn b-g full big" onclick="doClose()">🔒 إقفال</button>
+  ${c?`<div class="card warn mt" style="text-align:start"><div class="nm">🔓 فتح الفترة</div><label>كلمة سر صاحب التطبيق</label><input id="cl_p" type="password"><button class="btn b-r full" onclick="doOpen()">🔓 فتح الفترة المقفلة</button></div>`:''}`);
+}
+function doClose(){const d=val('cl_d');if(!d){toast('اختر التاريخ');return}if(!confirm('إقفال كل الحركات حتى '+fmtDate(d)+'؟'))return;D.settings.closed=d;logA('إقفال الفترة حتى '+fmtDate(d));save();closeForm();toast('تم الإقفال 🔒')}
+function doOpen(){if(hash(val('cl_p'))!==D.settings.pw){toast('كلمة السر غير صحيحة');return}logA('فتح الفترة المقفلة (كانت حتى '+fmtDate(D.settings.closed)+')');delete D.settings.closed;save();closeForm();toast('تم فتح الفترة 🔓')}
+function logSheet(){
+  const L=[...(D.log||[])].reverse();
+  openSheet('📜 سجل العمليات',`<p class="mut">كل عملية مالية تُسجَّل هنا تلقائياً: من قام بها ومتى. لا يمكن تعديل هذا السجل.</p>
+  <input placeholder="🔍 بحث" oninput="const q=this.value.trim();document.querySelectorAll('.lgr').forEach(r=>r.style.display=r.textContent.includes(q)?'':'none')">
+  <button class="btn b-l full" onclick="repLog()">🖨️ طباعة السجل</button>
+  ${L.length?L.slice(0,400).map(x=>`<div class="card lgr"><div class="row"><b>${esc(x.by||'—')}</b><span class="mut">${fmtDate(x.t.slice(0,10))} ${new Date(x.t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span></div><p>${esc(x.txt)}</p></div>`).join(''):emptyBox('📜','لا توجد عمليات مسجّلة بعد')}`);
+}
+function repLog(){const L=[...(D.log||[])].reverse();
+  openRep(rHead('سجل العمليات (Audit Log)')+tbl(['التاريخ','الوقت','المستخدم','العملية'],L.map(x=>tr([fmtDate(x.t.slice(0,10)),new Date(x.t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),esc(x.by||''),esc(x.txt)]))))}
+
+/* ========== الخصم والإعفاء ========== */
+function discForm(id){const i=I(id),c=C(i.cid),t=T(c.tid);
+  openSheet('✂️ خصم / إعفاء من دفعة',`<div class="card soft"><div class="nm">👤 ${esc(t?t.name:'')}</div><p>دفعة ${fmtDate(i.due)} — ${money(i.amount)} • الباقي <b>${money(rem(i))}</b></p>
+  <p class="mut">الخصم يُوثَّق بإشعار مرقّم وسبب ومن وافق عليه، بدل تعديل مبلغ الدفعة يدوياً.</p></div>
+  <label>مبلغ الخصم</label><input id="ds_a" type="number" inputmode="decimal" value="${rem(i)}">
+  <label>التاريخ</label><input id="ds_d" type="date" value="${today()}">
+  <label>السبب (إجباري)</label><select id="ds_r">${opts(['خصم تعجيل دفع','إعفاء لظروف المستأجر','تسوية / صلح','تعويض عن عطل أو انقطاع خدمة','تخفيض متفق عليه','أخرى'])}</select>
+  <label>تفاصيل</label><input id="ds_n" placeholder="مثال: موافقة الشركاء بتاريخ ...">
+  <label>الموافقة من</label><input id="ds_b" value="${esc(nameOf(cur))}">
+  <button class="btn b-g full big" onclick="discSave('${id}')">💾 حفظ وإصدار إشعار الخصم</button>`)}
+function discSave(id){const i=I(id),a=+val('ds_a'),d=val('ds_d')||today();if(!(a>0)){toast('اكتب المبلغ');return}if(a>rem(i)+0.0005){toast('الخصم أكبر من الباقي ('+money(rem(i))+')');return}if(lockGuard(d))return;
+  const x={id:uid(),amt:a,date:d,reason:val('ds_r')+(val('ds_n')?' — '+val('ds_n'):''),by:val('ds_b'),no:nextNo('w')};
+  i.discs=i.discs||[];i.discs.push(x);syncInst(i);logA('إشعار خصم خص-'+x.no+' — '+money(a)+' — '+x.reason);closeSheet();after('تم الخصم ✅ — إشعار خص-'+x.no);discVch(id,x.id)}
+function discVch(iid,did){const i=I(iid),d=i.discs.find(x=>x.id===did),c=C(i.cid),t=T(c.tid),p=P(c.pid);
+  vchOpen({void:d.void,kind:'note',no:'خص-'+d.no,date:d.date,party:t?t.name:'',amount:d.amt,about:`خصم / إعفاء من دفعة إيجار ${p?p.name:''} - ${unitName(p,c.uid)} المستحقة ${fmtDate(i.due)}. السبب: ${d.reason}. الموافقة: ${d.by||''}`,method:'خصم'},true)}
+
+/* ========== كشف المستأجر مدين / دائن ========== */
+function repLedger(tid,to){
+  const t=T(tid);if(!t){toast('اختر مستأجراً');return}to=to||today();
+  const cs=D.contracts.filter(c=>c.tid===tid),E=[];
+  cs.forEach(c=>{const p=P(c.pid),u=(p?p.name:'')+' - '+unitName(p,c.uid);
+    D.inst.filter(i=>i.cid===c.id&&i.due<=to).forEach(i=>{E.push({d:i.due,o:0,ref:'',txt:'أجرة مستحقة — '+u,dr:+i.amount,cr:0});
+      live(i.pays).forEach(y=>{if(y.date<=to||y.chq)E.push({d:y.chq?y.chq.recv:y.date,o:1,ref:y.rno||'',txt:'سند قبض — '+(y.method||'')+(y.chq?' شيك '+y.chq.no+' ('+CHQ_ST[y.chq.st][0]+')':''),dr:0,cr:+y.amt})});
+      live(i.discs).forEach(x=>E.push({d:x.date,o:2,ref:'خص-'+x.no,txt:'خصم / إعفاء — '+x.reason,dr:0,cr:+x.amt}))});
+    D.inst.filter(i=>i.cid===c.id&&i.due>to).forEach(i=>live(i.pays).forEach(y=>E.push({d:y.chq?y.chq.recv:y.date,o:1,ref:y.rno||'',txt:'دفعة مقدمة عن '+fmtDate(i.due)+(y.chq?' — شيك '+y.chq.no:''),dr:0,cr:+y.amt})))});
+  E.sort((a,b)=>a.d.localeCompare(b.d)||a.o-b.o);let b=0;
+  const rows=E.map(e=>{b+=e.dr-e.cr;return tr([fmtDate(e.d),e.ref,esc(e.txt),e.dr?money(e.dr):'',e.cr?money(e.cr):'',`<b class="${b>0.0005?'red':''}">${money(Math.abs(b))} ${b>0.0005?'مدين':b<-0.0005?'دائن':''}</b>`])});
+  const dep=sum(cs,depBal);
+  openRep(rHead('كشف حساب مستأجر (مدين / دائن)',`👤 ${esc(t.name)}${t.phone?' • 📱 '+esc(t.phone):''} • حتى ${fmtDate(to)}`)+
+    rBoxes([['إجمالي المستحق (مدين)',money(sum(E,e=>e.dr))],['إجمالي المدفوع والخصومات (دائن)',money(sum(E,e=>e.cr)),'g'],[b>0?'الرصيد المطلوب منه':'رصيد له (دفع مقدماً)',money(Math.abs(b)),b>0?'r':'g'],...(dep?[['🔐 تأمين محتجز له',money(dep)]]:[])])+
+    tbl(['التاريخ','المرجع','البيان','مدين','دائن','الرصيد'],rows,['المجموع','','',money(sum(E,e=>e.dr)),money(sum(E,e=>e.cr)),money(Math.abs(b))])+sign());
+}
+/* ========== أعمار الذمم ========== */
+function repAging(){
+  const td=today(),B=[[1,30],[31,60],[61,90],[91,99999]],R={};
+  D.inst.filter(i=>rem(i)>0&&i.due<td).forEach(i=>{const c=C(i.cid);if(!c)return;const k=c.tid,dd=days(i.due,td);R[k]=R[k]||[0,0,0,0];const ix=B.findIndex(([a,b])=>dd>=a&&dd<=b);R[k][ix]+=rem(i)});
+  const L=Object.entries(R).map(([tid,v])=>({t:T(tid),v,s:sum(v,x=>x)})).sort((a,b)=>b.v[3]-a.v[3]||b.s-a.s);
+  const tot=[0,1,2,3].map(k=>sum(L,x=>x.v[k]));
+  openRep(rHead('تقرير أعمار الذمم (المتأخرات حسب المدة)')+rBoxes([['1 - 30 يوم',money(tot[0]),'o'],['31 - 60 يوم',money(tot[1]),'o'],['61 - 90 يوم',money(tot[2]),'r'],['أكثر من 90 يوم',money(tot[3]),'r'],['الإجمالي',money(sum(tot,x=>x))]])+
+    tbl(['المستأجر','الهاتف','1-30','31-60','61-90','+90','المجموع','قانوني'],L.map(x=>tr([esc(x.t?x.t.name:'—'),esc(x.t&&x.t.phone||''),...x.v.map(v=>v?money(v):'—'),`<b>${money(x.s)}</b>`,x.t&&D.legal.some(l=>l.tid===x.t.id&&lOpen(l))?'⚖️':''],x.v[3]>0?'late':'')),['المجموع','',...tot.map(money),money(sum(tot,x=>x)),''])+
+    '<p class="mut">المتأخر أكثر من 90 يوماً (المظلل) يُنصح بمتابعته قانونياً أولاً.</p>');
+}
+/* ========== ضريبة المبيعات ========== */
+const vatRate=()=>+(D.settings.vat??16);
+function vatToggle(cid){const c=C(cid);c.vat=!c.vat;logA((c.vat?'تفعيل':'إلغاء')+' ضريبة المبيعات على عقد '+(T(c.tid)||{}).name);after(c.vat?'العقد خاضع لضريبة المبيعات '+vatRate()+'% (المبالغ شاملة للضريبة)':'العقد غير خاضع لضريبة المبيعات')}
+const vatP=y=>y&&y.vr?Math.round((+y.amt||0)*y.vr/(100+y.vr)*1000)/1000:0;
+const vrOf=cid=>{const c=C(cid);return c&&c.vat?vatRate():0};
+
+/* ========== قائمة الدخل ========== */
+function repPL(f,to,pid){
+  f=f||today().slice(0,4)+'-01-01';to=to||today();const inP=c=>!pid||c.pid===pid;
+  const pays=allPays(f,to).filter(x=>inP(x.c)),vat=sum(pays,x=>vatP(x.p)),rentC=sum(pays,x=>x.p.amt)-vat;
+  const M=cashMoves(f,to).filter(x=>!pid||x.pid===pid||(x.src==='inst'&&C(I(x.id).cid).pid===pid)||(x.src==='cash'&&((D.cash.find(y=>y.id===x.id)||{}).pid===pid)));
+  const oth={},exp={};M.filter(x=>!x.lia&&!x.eq&&x.src!=='inst').forEach(x=>{const o=x.kind==='in'?oth:exp;o[x.cat]=(o[x.cat]||0)+x.amount});
+  const oi=sum(Object.values(oth),x=>x),ex=sum(Object.values(exp),x=>x),net=rentC+oi-ex;
+  const dueI=D.inst.filter(i=>i.due>=f&&i.due<=to&&C(i.cid)&&inP(C(i.cid))),acc=sum(dueI,i=>i.amount),disc=sum(D.inst.filter(i=>C(i.cid)&&inP(C(i.cid))).flatMap(i=>live(i.discs)).filter(d=>d.date>=f&&d.date<=to),d=>d.amt);
+  const collDue=sum(dueI,paidOf),outst=sum(dueI,rem),adv=sum(pays.filter(x=>x.i.due>to),x=>x.p.amt);
+  const eq=sum(M.filter(x=>x.eq),x=>x.amount);
+  const line=(t,v,b)=>tr([b?`<b>${t}</b>`:t,b?`<b>${money(v)}</b>`:money(v)]);
+  let byP='';if(!pid&&D.props.length>1){byP=`<h2>🏢 حسب العقار</h2>`+tbl(['العقار','الإيجار المحصّل','إيرادات أخرى','المصاريف','صافي الدخل'],D.props.map(p=>{const ps=pays.filter(x=>x.c.pid===p.id),r=sum(ps,x=>x.p.amt-vatP(x.p));
+    const pm=M.filter(x=>!x.lia&&!x.eq&&x.src!=='inst'&&x.pid===p.id),pi=sum(pm.filter(x=>x.kind==='in'),x=>x.amount),pe=sum(pm.filter(x=>x.kind==='out'),x=>x.amount);return tr([esc(p.name),money(r),money(pi),money(pe),`<b>${money(r+pi-pe)}</b>`])}))+'<p class="mut">المصاريف العامة غير المربوطة بعقار لا تظهر في هذا الجدول.</p>'}
+  openRep(rHead('قائمة الدخل'+(pid?' — '+P(pid).name:' — كل العقارات'),`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
+    `<div class="noprint card soft" style="margin-bottom:10px"><div class="row2"><div><label>من</label><input type="date" id="pl_f" value="${f}"></div><div><label>إلى</label><input type="date" id="pl_t" value="${to}"></div></div>
+    <select id="pl_p"><option value="">كل العقارات</option>${opts(D.props.map(p=>[p.id,p.name]),pid)}</select><button class="btn b-g full" onclick="repPL(val('pl_f'),val('pl_t'),val('pl_p'))">تحديث</button></div>`+
+    rBoxes([['الإيرادات',money(rentC+oi),'g'],['المصاريف',money(ex),'r'],['صافي الدخل',money(net),net>=0?'g':'r'],...(vat?[['ضريبة مبيعات محصّلة (التزام)',money(vat),'o']]:[])])+
+    `<h2>📗 الأساس النقدي (ما قُبض ودُفع فعلاً)</h2>`+tbl(['البند','المبلغ'],[line('إيرادات الإيجار المحصّلة'+(vat?' (بدون الضريبة)':''),rentC),...Object.entries(oth).map(([k,v])=>line('إيراد: '+esc(k),v)),line('إجمالي الإيرادات',rentC+oi,1),
+      ...Object.entries(exp).sort((a,b)=>b[1]-a[1]).map(([k,v])=>line('مصروف: '+esc(k),v)),line('إجمالي المصاريف',ex,1),line('صافي الدخل',net,1)])+
+    (eq?`<p class="mut">سحوبات المالك وتوزيعات الشركاء في الفترة: ${money(eq)} — ليست مصروفاً ولا تُخصم من صافي الدخل.</p>`:'')+
+    `<h2>📘 الأساس الاستحقاقي (الإيجار المستحق في الفترة)</h2>`+tbl(['البند','المبلغ'],[line('الإيجار المستحق في الفترة',acc),line('خصومات وإعفاءات ممنوحة',disc),line('صافي المستحق',acc-disc,1),line('المحصّل من مستحقات الفترة',collDue),line('غير المحصّل (ذمم)',outst,1),line('مقبوض مقدماً عن فترات قادمة',adv)])+
+    byP+'<p class="mut">⚠️ هذه القائمة لمساعدة محاسبك عند إعداد الإقرار الضريبي، وليست بديلاً عن رأيه في المعاملة الضريبية.</p>');
+}
+/* ========== الإشغال والعائد ========== */
+function repOcc(y){
+  y=+(y||today().slice(0,4));const f=y+'-01-01',to=y+'-12-31',nd=days(f,to)+1;
+  const rows=D.props.map(p=>{let ud=0,lost=0;
+    p.units.forEach(u=>{let r=0;D.contracts.filter(c=>c.uid===u.id).forEach(c=>{const a=c.start>f?c.start:f,b=c.end<to?c.end:to;if(b>=a)r+=days(a,b)+1});r=Math.min(r,nd);ud+=r;
+      const lc=D.contracts.filter(c=>c.uid===u.id).sort((a,b)=>b.start.localeCompare(a.start))[0];if(lc&&r<nd){const perDay=sum(D.inst.filter(i=>i.cid===lc.id),i=>i.amount)/Math.max(1,days(lc.start,lc.end)+1);lost+=perDay*(nd-r)}});
+    const occ=p.units.length?ud/(p.units.length*nd)*100:0;
+    const coll=sum(allPays(f,to).filter(x=>x.c.pid===p.id),x=>x.p.amt),M=propMoney(p.id,f,to),net=coll+sum(M.L.filter(x=>x.kind==='in'&&x.src!=='inst'&&!x.lia),x=>x.amount)-M.o;
+    return{p,occ,lost,coll,net,yl:p.value?net/p.value*100:null}});
+  openRep(rHead('تقرير الإشغال والعائد لعام '+y)+rBoxes([['متوسط الإشغال',(rows.length?sum(rows,r=>r.occ)/rows.length:0).toFixed(1)+'%'],['الإيراد الضائع بسبب الشواغر (تقديري)',money(sum(rows,r=>r.lost)),'r'],['صافي الدخل',money(sum(rows,r=>r.net)),'g']])+
+    tbl(['العقار','الوحدات','نسبة الإشغال','الإيراد الضائع (تقديري)','المحصّل','صافي الدخل','قيمة العقار','العائد السنوي'],rows.map(r=>tr([esc(r.p.name),r.p.units.length,r.occ.toFixed(1)+'%',money(r.lost),money(r.coll),money(r.net),r.p.value?money(r.p.value):'—',r.yl==null?'<span class="mut">أضف قيمة العقار</span>':r.yl.toFixed(2)+'%'],r.occ<80?'late':'')))+
+    '<p class="mut">الإيراد الضائع = أيام الشغور × آخر أجرة يومية للوحدة. العائد = صافي الدخل ÷ قيمة العقار (أضف القيمة من «تعديل العقار»).</p>');
+}
+/* ========== دفتر اليومية للمحاسب ========== */
+function csvJournal(f,to){
+  f=f||'0000-01-01';to=to||'9999-12-31';const R=[['التاريخ','المرجع','البيان','الحساب المدين','الحساب الدائن','المبلغ']],A=id=>(AC(id)||{}).name||'الصندوق النقدي';
+  D.inst.forEach(i=>{const c=C(i.cid);if(!c)return;const t=T(c.tid),pr=P(c.pid),ds=(t?t.name:'')+' — '+(pr?pr.name:'')+' - '+unitName(pr,c.uid);
+    live(i.pays).forEach(y=>{const v=vatP(y),dr=y.method==='خصم من التأمين'?'تأمينات المستأجرين':y.chq?'شيكات برسم التحصيل':A(y.acct||defAcct(y.method)),dt=y.chq?y.chq.recv:y.date;
+      if(dt>=f&&dt<=to){R.push([dt,y.rno||'',ds,dr,'إيرادات الإيجار',(y.amt-v).toFixed(3)]);if(v)R.push([dt,y.rno||'',ds+' — ضريبة مبيعات',dr,'ضريبة المبيعات المستحقة',v.toFixed(3)])}
+      if(y.chq&&y.chq.st==='cleared'){const cl=[...y.chq.h].reverse().find(h=>h.st==='cleared');if(cl&&cl.date>=f&&cl.date<=to)R.push([cl.date,y.rno||'','تحصيل شيك '+y.chq.no+' — '+ds,A(y.chq.acct||defAcct('تحويل بنكي')),'شيكات برسم التحصيل',(+y.amt).toFixed(3)])}});
+    live(i.discs).filter(x=>x.date>=f&&x.date<=to).forEach(x=>R.push([x.date,'خص-'+x.no,'خصم/إعفاء — '+ds+' — '+x.reason,'خصومات وإعفاءات ممنوحة','ذمم المستأجرين',(+x.amt).toFixed(3)]))});
+  live(D.cash).filter(x=>x.date>=f&&x.date<=to).forEach(x=>{const n=(x.kind==='out'?'ص-':'ق-')+x.no,ds=[x.party,x.note].filter(Boolean).join(' — '),ac=A(x.acct||defAcct(x.method));
+    if(x.kind==='out')R.push([x.date,n,ds,x.cat==='سحب المالك'?'جاري المالك':x.cat==='توزيع على الشركاء'?'جاري الشريك: '+(x.party||''):'مصروف: '+x.cat,ac,(+x.amount).toFixed(3)]);else R.push([x.date,n,ds,ac,'إيراد: '+x.cat,(+x.amount).toFixed(3)])});
+  D.contracts.forEach(c=>{const d=c.dep;if(!d||d.void)return;const t=T(c.tid),nm=t?t.name:'';
+    if(d.date>=f&&d.date<=to)R.push([d.date,'ت-'+d.no,'تأمين مستلم — '+nm,d.method==='كمبيالة'?'كمبيالات تأمين':A(d.acct||defAcct(d.method)),'تأمينات المستأجرين',(+d.amt).toFixed(3)]);
+    live(d.moves).filter(m=>m.date>=f&&m.date<=to).forEach(m=>{if(m.type==='refund')R.push([m.date,'تر-'+m.no,'رد تأمين — '+nm,'تأمينات المستأجرين',A(m.acct||defAcct(m.method)),(+m.amt).toFixed(3)]);
+      else if(m.type==='damage')R.push([m.date,'تخ-'+m.no,'خصم أضرار من التأمين — '+nm,'تأمينات المستأجرين','إيرادات تعويض أضرار',(+m.amt).toFixed(3)])})});
+  D.props.forEach(p=>(p.taxes||[]).filter(r=>r.paid&&r.paidDate>=f&&r.paidDate<=to).forEach(r=>R.push([r.paidDate,r.receipt||'','مسقفات ومعارف '+r.year+' — '+p.name,'مصروف: مسقفات ومعارف',A(r.acct),((+r.masq||0)+(+r.maaref||0)).toFixed(3)])));
+  live(D.xfers).filter(x=>x.date>=f&&x.date<=to).forEach(x=>R.push([x.date,'تح-'+x.no,x.note||'تحويل بين الحسابات',A(x.to),A(x.from),(+x.amt).toFixed(3)]));
+  const H=R.shift();R.sort((a,b)=>a[0].localeCompare(b[0]));csvDownload('amlaki-journal-'+today()+'.csv',[H,...R]);logA('تصدير دفتر اليومية');
+}
 
 /* ========== الحسابات: نقد، بنك، محفظة ========== */
 const ACT_IC={cash:'💵',bank:'🏦',wallet:'📱'};
@@ -1565,7 +1726,7 @@ function xferForm(){
   <label>ملاحظة / رقم إشعار الإيداع</label><input id="xf_n">
   <button class="btn b-g full big" onclick="xferSave()">💾 حفظ التحويل</button><button class="btn b-l full" onclick="cashSheet()">رجوع</button>`);
 }
-function xferSave(){const f=val('xf_f'),t=val('xf_t'),a=+val('xf_a');if(f===t){toast('اختر حسابين مختلفين');return}if(!(a>0)){toast('اكتب المبلغ');return}
+function xferSave(){const f=val('xf_f'),t=val('xf_t'),a=+val('xf_a');if(f===t){toast('اختر حسابين مختلفين');return}if(!(a>0)){toast('اكتب المبلغ');return}if(lockGuard(val('xf_d')||today()))return;logA('تحويل '+money(a)+' من '+AC(f).name+' إلى '+AC(t).name);
   D.xfers.push({id:uid(),no:nextNo('t'),from:f,to:t,amt:a,date:val('xf_d')||today(),note:val('xf_n'),by:nameOf(cur)});save();cashSheet();toast('تم التحويل ✅')}
 function repAcct(id,f,to,bank){
   const a=AC(id);f=f||(today().slice(0,8)+'01');to=to||today();
@@ -1611,6 +1772,7 @@ function chqSet(iid,pid,st){const i=I(iid),p=i.pays.find(x=>x.id===pid);
   ${st==='deposited'?`<label>أُودع في حساب</label>${acctSel('cq_a',(D.accts.find(a=>a.type==='bank')||D.accts[0]).id)}`:''}
   <button class="btn b-g full big" onclick="chqSetSave('${iid}','${pid}','${st}')">💾 حفظ</button><button class="btn b-l full" onclick="chequesSheet()">رجوع</button>`)}
 function chqSetSave(iid,pid,st){const i=I(iid),p=i.pays.find(x=>x.id===pid);
+  if(lockGuard(val('cq_d')||today()))return;logA('شيك '+p.chq.no+': '+CHQ_ST[st][0]);
   p.chq.st=st;p.chq.h.push({st,date:val('cq_d')||today()});if(st==='deposited')p.chq.acct=val('cq_a');save();render();chequesSheet();toast(st==='deposited'?'تم تسجيل الإيداع 🏦':'تم تحصيل الشيك ✅')}
 function chqBounce(iid,pid){const i=I(iid),p=i.pays.find(x=>x.id===pid),c=C(i.cid),t=T(c.tid);
   openSheet('❌ شيك مرتجع',`<div class="card warn" style="text-align:start"><div class="nm">شيك ${esc(p.chq.no)} — ${money(p.amt)} — ${esc(t?t.name:'')}</div>
@@ -1618,7 +1780,7 @@ function chqBounce(iid,pid){const i=I(iid),p=i.pays.find(x=>x.id===pid),c=C(i.ci
   <label>سبب الإرجاع</label><select id="b_w">${opts(['عدم كفاية الرصيد','توقيع غير مطابق','الحساب مغلق','إيقاف صرف','أخرى'])}</select>
   <label>تاريخ الإرجاع</label><input id="b_d" type="date" value="${today()}">
   <button class="btn b-r full big" onclick="doBounce('${iid}','${pid}')">❌ تسجيل الشيك مرتجعاً</button><button class="btn b-l full" onclick="chequesSheet()">رجوع</button>`)}
-function doBounce(iid,pid){const i=I(iid),p=i.pays.find(x=>x.id===pid),d=val('b_d')||today(),w=val('b_w');
+function doBounce(iid,pid){const i=I(iid),p=i.pays.find(x=>x.id===pid),d=val('b_d')||today(),w=val('b_w');if(lockGuard(d))return;logA('شيك مرتجع '+p.chq.no+' — '+money(p.amt)+' — '+w);
   p.chq.st='bounced';p.chq.why=w;p.chq.h.push({st:'bounced',date:d});p.void={date:d,reason:'شيك مرتجع: '+w,by:nameOf(cur)};syncInst(i);
   save();render();chqPer='bounced';chequesSheet();toast('تم تسجيل الشيك مرتجعاً — الدفعة عادت ديناً على المستأجر')}
 function bulkChq(cid){
@@ -1634,8 +1796,9 @@ function bulkChqSave(cid){
   const L=D.inst.filter(i=>i.cid===cid&&!i.paid).sort((a,b)=>a.due.localeCompare(b.due)),bk=val('bk_b').trim(),rd=val('bk_d')||today();let n=0;
   for(let k=0;k<L.length;k++){if(!document.getElementById('bk_c'+k).checked)continue;const no=val('bk_n'+k).trim();if(!no){toast('اكتب رقم الشيك للدفعة '+fmtDate(L[k].due));return}}
   L.forEach((i,k)=>{if(!document.getElementById('bk_c'+k).checked)return;const no=val('bk_n'+k).trim();
-    const p={id:uid(),amt:rem(i),date:i.due,method:'شيك',note:'',rno:nextNo('r'),chq:{no,bank:bk,due:i.due,recv:rd,st:'held',h:[{st:'held',date:rd}]}};
+    const p={id:uid(),vr:vrOf(i.cid),amt:rem(i),date:i.due,method:'شيك',note:'',rno:nextNo('r'),chq:{no,bank:bk,due:i.due,recv:rd,st:'held',h:[{st:'held',date:rd}]}};
     i.pays=i.pays||[];i.pays.push(p);i.checkNo=no;i.bank=bk;syncInst(i);n++});
+  logA('استلام '+n+' شيك لعقد');
   closeSheet();after('تم استلام '+n+' شيك ✅ — صدر لكل منها سند قبض');
 }
 function repCheques(){
@@ -1672,9 +1835,9 @@ function depForm(cid){
   <label>ملاحظة</label><input id="d_n" placeholder="مثال: شيك رقم 123 بنك الإسكان">
   <button class="btn b-g full big" onclick="depSave('${cid}')">💾 حفظ وإصدار سند استلام التأمين</button>`);
 }
-function depSave(cid){const a=+val('d_a');if(!(a>0)){toast('اكتب مبلغ التأمين');return}
+function depSave(cid){const a=+val('d_a');if(!(a>0)){toast('اكتب مبلغ التأمين');return}if(lockGuard(val('d_d')||today()))return;
   const c=C(cid);c.dep={amt:a,date:val('d_d')||today(),method:val('d_m'),acct:val('d_acct'),note:val('d_n'),no:nextNo('d'),moves:[]};
-  closeSheet();after('تم تسجيل التأمين ✅ — سند ت-'+c.dep.no);depVch(cid)}
+  logA('سند تأمين ت-'+c.dep.no+' — '+money(a));closeSheet();after('تم تسجيل التأمين ✅ — سند ت-'+c.dep.no);depVch(cid)}
 function depMoveForm(cid,type){
   const c=C(cid),bal=depBal(c),late=D.inst.filter(i=>i.cid===cid&&!i.paid&&i.due<=today()),lt=sum(late,rem);
   const T0={refund:'↩️ رد التأمين للمستأجر',rent:'🏠 خصم من التأمين مقابل أجرة',damage:'🛠️ خصم من التأمين (أضرار / تصليحات)'}[type];
@@ -1692,13 +1855,14 @@ function depMoveSave(cid,type){
   const c=C(cid),bal=depBal(c),a=+val('dm_a'),r=val('dm_r').trim();
   if(!(a>0)){toast('اكتب المبلغ');return}if(a>bal+0.0005){toast('المبلغ أكبر من التأمين المحتجز ('+money(bal)+')');return}
   if(type==='damage'&&r.length<3){toast('اكتب وصف الأضرار');return}
+  if(lockGuard(val('dm_d')||today()))return;
   const m={id:uid(),type,amt:a,date:val('dm_d')||today(),reason:r,method:type==='refund'?val('dm_m'):'',acct:type==='refund'?val('dm_acct'):'',no:nextNo(type==='refund'?'dr':'dd')};
   if(type==='rent'){let left=a;m.pays=[];
     const L=D.inst.filter(i=>i.cid===cid&&!i.paid&&i.due<=today()).sort((x,y)=>x.due.localeCompare(y.due));
     const tot=sum(L,rem);if(a>tot+0.0005){toast('المبلغ أكبر من الأجرة المستحقة ('+money(tot)+')');return}
-    for(const i of L){if(left<=0.0005)break;const x=Math.min(left,rem(i));const y={id:uid(),amt:Math.round(x*1000)/1000,date:m.date,method:'خصم من التأمين',note:'خصم من التأمين — إشعار تخ-'+m.no,rno:nextNo('r')};
+    for(const i of L){if(left<=0.0005)break;const x=Math.min(left,rem(i));const y={id:uid(),vr:vrOf(i.cid),amt:Math.round(x*1000)/1000,date:m.date,method:'خصم من التأمين',note:'خصم من التأمين — إشعار تخ-'+m.no,rno:nextNo('r')};
       i.pays=i.pays||[];i.pays.push(y);syncInst(i);m.pays.push([i.id,y.id]);left-=x}}
-  c.dep.moves=c.dep.moves||[];c.dep.moves.push(m);
+  c.dep.moves=c.dep.moves||[];c.dep.moves.push(m);logA((type==='refund'?'رد تأمين تر-':'خصم من التأمين تخ-')+m.no+' — '+money(a));
   closeSheet();after(type==='refund'?'تم رد التأمين ✅':'تم الخصم من التأمين ✅');depMoveVch(cid,m.id);
 }
 function depVch(cid){const c=C(cid),d=c.dep,t=T(c.tid),p=P(c.pid);
@@ -1724,7 +1888,9 @@ function partnersSheet(pid,eid){
   ${p.partners.length&&Math.abs(tot-100)>=0.01?`<p class="mut">⚠️ مجموع النسب يجب أن يكون 100%${tot<100?' — الباقي '+(+(100-tot).toFixed(2))+'%':''}</p>`:''}
   ${!p.partners.length?'<p class="mut">لم تُضف شركاء بعد. إذا كان العقار ملكك وحدك فلا تحتاج لإضافة أحد.</p>':''}</div>
   ${p.partners.map(x=>`<div class="card"><div class="row"><div><div class="nm">👤 ${esc(x.name)}</div><div class="mut">${x.phone?'📱 '+esc(x.phone):''}</div></div><b class="amt">${+(+x.pct).toFixed(2)}%</b></div>
-    <div class="btns"><button class="btn b-l" onclick="partnersSheet('${pid}','${x.id}')">✏️ تعديل</button>${x.phone?`<button class="btn b-w" onclick="openExt('https://wa.me/${waNum(x.phone)}')">💬</button>`:''}<button class="btn b-r" onclick="partnerDel('${pid}','${x.id}')">🗑️</button></div></div>`).join('')}
+    <div class="btns"><button class="btn b-g" onclick="distForm('${pid}','${x.id}')">💸 صرف حصة</button><button class="btn b-l" onclick="partnersSheet('${pid}','${x.id}')">✏️ تعديل</button>${x.phone?`<button class="btn b-w" onclick="openExt('https://wa.me/${waNum(x.phone)}')">💬</button>`:''}<button class="btn b-r" onclick="partnerDel('${pid}','${x.id}')">🗑️</button></div></div>`).join('')}
+  ${p.partners.length?`<div class="card soft"><div class="nm">💼 أتعاب الإدارة</div><p class="mut">نسبة تُخصم من التحصيل لمن يدير العقار قبل توزيع الصافي على الشركاء (اختياري).</p>
+    <div class="row2"><div><input id="pt_m" type="number" inputmode="decimal" value="${p.mgmt||0}" placeholder="%"></div><div><button class="btn b-l full" onclick="P('${pid}').mgmt=+val('pt_m')||0;logA('أتعاب إدارة '+(+val('pt_m')||0)+'% — ${esc(p.name)}');save();partnersSheet('${pid}');toast('تم الحفظ ✅')">💾 حفظ النسبة %</button></div></div></div>`:''}
   <div class="card"><div class="nm">${eid?'✏️ تعديل شريك':'➕ إضافة شريك'}</div>
   <label>اسم الشريك</label><input id="pt_n" list="ptlist" value="${esc(e.name||'')}"><datalist id="ptlist">${allPartners().map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
   <div class="row2"><div><label>النسبة %</label><input id="pt_p" type="number" inputmode="decimal" value="${e.pct??(p.partners.length?Math.max(0,+(100-tot).toFixed(2)):'')}"></div><div><label>الهاتف (اختياري)</label><input id="pt_t" type="tel" value="${esc(e.phone||'')}"></div></div>
@@ -1737,8 +1903,16 @@ function partnerSave(pid,eid){
   if(!n){toast('اكتب اسم الشريك');return}if(!(pc>0&&pc<=100)){toast('اكتب نسبة صحيحة بين 0 و 100');return}
   const others=sum((p.partners||[]).filter(x=>x.id!==eid),x=>x.pct);if(others+pc>100.001){toast('مجموع النسب سيتجاوز 100% — الباقي '+(+(100-others).toFixed(2))+'%');return}
   p.partners=p.partners||[];let x=eid&&p.partners.find(y=>y.id===eid);if(!x){x={id:uid()};p.partners.push(x)}
-  Object.assign(x,{name:n,pct:pc,phone:val('pt_t')});save();render();partnersSheet(pid);toast('تم حفظ الشريك ✅');
+  Object.assign(x,{name:n,pct:pc,phone:val('pt_t')});logA('شريك '+n+' '+pc+'% في '+p.name);save();render();partnersSheet(pid);toast('تم حفظ الشريك ✅');
 }
+function distForm(pid,ptid){const p=P(pid),x=p.partners.find(y=>y.id===ptid);
+  openSheet('💸 صرف حصة شريك',`<div class="card soft"><div class="nm">👤 ${esc(x.name)} — ${x.pct}% من ${esc(p.name)}</div><p class="mut">التوزيع ليس مصروفاً: يُسجَّل كسحب على حساب الشريك ويظهر في كشفه.</p></div>
+  <label>المبلغ</label><input id="ds_x" type="number" inputmode="decimal"><label>التاريخ</label><input id="ds_xd" type="date" value="${today()}">
+  <label>دُفع من حساب</label>${acctSel('ds_xa','cash')}<label>ملاحظة</label><input id="ds_xn" placeholder="مثال: حصة الربع الأول">
+  <button class="btn b-g full big" onclick="distSave('${pid}','${ptid}')">💾 حفظ وإصدار سند الصرف</button>`)}
+function distSave(pid,ptid){const p=P(pid),x=p.partners.find(y=>y.id===ptid),a=+val('ds_x'),d=val('ds_xd')||today();if(!(a>0)){toast('اكتب المبلغ');return}if(lockGuard(d))return;
+  const c={id:uid(),kind:'out',no:nextNo('x'),amount:a,date:d,cat:'توزيع على الشركاء',party:x.name,pid,ptid,method:'نقدي',acct:val('ds_xa'),note:val('ds_xn'),imgs:[],by:nameOf(cur)};
+  D.cash.push(c);logA('توزيع على الشريك '+x.name+' ص-'+c.no+' — '+money(a));save();render();partnersSheet(pid);cashVch(c.id)}
 function partnerDel(pid,id){if(!confirm('حذف هذا الشريك من العقار؟'))return;const p=P(pid);p.partners=p.partners.filter(x=>x.id!==id);save();render();partnersSheet(pid)}
 function allPartners(){return[...new Set(D.props.flatMap(p=>(p.partners||[]).map(x=>x.name)))].sort((a,b)=>a.localeCompare(b,'ar'))}
 function propMoney(pid,f,to){
@@ -1748,12 +1922,13 @@ function propMoney(pid,f,to){
   return{L,...cashTot(L)};
 }
 function repPartners(pid,f,to){
-  const p=P(pid);f=f||'0000-01-01';to=to||'9999-12-31';const M=propMoney(pid,f,to),pts=p.partners||[];
-  const rows=pts.map(x=>tr([esc(x.name),(+x.pct)+'%',money(M.i*x.pct/100),money(M.o*x.pct/100),`<b>${money(M.b*x.pct/100)}</b>`]));
+  const p=P(pid);f=f||'0000-01-01';to=to||'9999-12-31';const M=propMoney(pid,f,to),pts=p.partners||[],fee=M.i*(+p.mgmt||0)/100,dist=M.b-fee;
+  const paidTo=x=>sum(live(D.cash).filter(c=>c.ptid===x.id&&c.pid===pid&&c.date>=f&&c.date<=to),c=>c.amount);
+  const rows=pts.map(x=>tr([esc(x.name),(+x.pct)+'%',money(M.i*x.pct/100),money((M.o+fee)*x.pct/100),`<b>${money(dist*x.pct/100)}</b>`,money(paidTo(x)),`<b class="${dist*x.pct/100-paidTo(x)>0.0005?'':'red'}">${money(dist*x.pct/100-paidTo(x))}</b>`]));
   const byC={};M.L.forEach(x=>{const k=(x.kind==='in'?'⬆️ ':'⬇️ ')+x.cat;byC[k]=(byC[k]||0)+x.amount});
   openRep(rHead('كشف توزيع الشركاء: '+p.name,`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
-    rBoxes([['التحصيل (الإيرادات)',money(M.i),'g'],['المدفوعات (المصاريف)',money(M.o),'r'],['الصافي للتوزيع',money(M.b),'o'],['مجموع النسب',pctSum(p)+'%']])+
-    `<h2>🤝 حصة كل شريك</h2>`+tbl(['الشريك','النسبة','حصته من التحصيل','حصته من المدفوعات','الصافي المستحق'],rows,['المجموع',pctSum(p)+'%',money(M.i*pctSum(p)/100),money(M.o*pctSum(p)/100),money(M.b*pctSum(p)/100)])+
+    rBoxes([['التحصيل (الإيرادات)',money(M.i),'g'],['المدفوعات (المصاريف)',money(M.o),'r'],...(fee?[['أتعاب الإدارة '+p.mgmt+'%',money(fee)]]:[]),['الصافي للتوزيع',money(dist),'o'],['المصروف للشركاء فعلاً',money(sum(pts,paidTo))],['مجموع النسب',pctSum(p)+'%']])+
+    `<h2>🤝 حصة كل شريك</h2>`+tbl(['الشريك','النسبة','حصته من التحصيل','حصته من المدفوعات والأتعاب','الصافي المستحق','المصروف له','الباقي له'],rows,['المجموع',pctSum(p)+'%',money(M.i*pctSum(p)/100),money((M.o+fee)*pctSum(p)/100),money(dist*pctSum(p)/100),money(sum(pts,paidTo)),money(dist*pctSum(p)/100-sum(pts,paidTo))])+
     `<h2>حسب البند</h2>`+tbl(['البند','المبلغ'],Object.entries(byC).map(([k,v])=>tr([esc(k),money(v)])))+
     `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','إيراد','مصروف'],[...M.L].reverse().map(x=>tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.kind==='in'?money(x.amount):'',x.kind==='out'?money(x.amount):''])),['المجموع','','','',money(M.i),money(M.o)])+
     `<p class="mut">ملاحظة: يدخل في الكشف فقط ما سُجّل على هذا العقار (الإيجارات، المسقفات، والإيرادات والمصاريف المربوطة بالعقار).</p>`);
@@ -1761,11 +1936,11 @@ function repPartners(pid,f,to){
 function repPartner(name,f,to){
   if(!name){toast('اختر شريكاً');return}f=f||'0000-01-01';to=to||'9999-12-31';
   const ps=D.props.filter(p=>(p.partners||[]).some(x=>x.name===name));let ti=0,to2=0;
-  const rows=ps.map(p=>{const x=p.partners.find(y=>y.name===name),M=propMoney(p.id,f,to),si=M.i*x.pct/100,so=M.o*x.pct/100;ti+=si;to2+=so;
-    return tr([esc(p.name),(+x.pct)+'%',money(M.i),money(M.o),money(si),money(so),`<b>${money(si-so)}</b>`])});
+  let tpd=0;const rows=ps.map(p=>{const x=p.partners.find(y=>y.name===name),M=propMoney(p.id,f,to),fee=M.i*(+p.mgmt||0)/100,si=M.i*x.pct/100,so=(M.o+fee)*x.pct/100,pd=sum(live(D.cash).filter(c=>c.ptid===x.id&&c.pid===p.id&&c.date>=f&&c.date<=to),c=>c.amount);ti+=si;to2+=so;tpd+=pd;
+    return tr([esc(p.name),(+x.pct)+'%',money(M.i),money(M.o+fee),money(si),money(so),`<b>${money(si-so)}</b>`,money(pd),`<b>${money(si-so-pd)}</b>`])});
   openRep(rHead('كشف حساب شريك',`👤 ${esc(name)} • من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
-    rBoxes([['عدد العقارات',ps.length],['حصته من التحصيل',money(ti),'g'],['حصته من المدفوعات',money(to2),'r'],['الصافي المستحق له',money(ti-to2),'o']])+
-    tbl(['العقار','نسبته','تحصيل العقار','مدفوعات العقار','حصته من التحصيل','حصته من المدفوعات','الصافي'],rows,['المجموع','','','',money(ti),money(to2),money(ti-to2)])+sign().replace('توقيع المستأجر','توقيع الشريك'));
+    rBoxes([['عدد العقارات',ps.length],['حصته من التحصيل',money(ti),'g'],['حصته من المدفوعات والأتعاب',money(to2),'r'],['الصافي المستحق له',money(ti-to2),'o'],['ما صُرف له',money(tpd)],['الباقي له',money(ti-to2-tpd),'g']])+
+    tbl(['العقار','نسبته','تحصيل العقار','مدفوعات وأتعاب','حصته من التحصيل','حصته من المدفوعات','الصافي','صُرف له','الباقي'],rows,['المجموع','','','',money(ti),money(to2),money(ti-to2),money(tpd),money(ti-to2-tpd)])+sign().replace('توقيع المستأجر','توقيع الشريك'));
 }
 
 /* ========== المسقفات والمعارف ========== */
@@ -1798,7 +1973,8 @@ function taxPayForm(pid,y){
   <button class="btn b-l full" onclick="clearSheet()">🧹 مسح الحقول</button>`);
 }
 function taxPay(pid,y){
-  const p=P(pid);p.taxes=p.taxes||[];let r=taxRec(p,y);if(!r){r={year:y};p.taxes.push(r)}
+  if(lockGuard(val('x_d')||today()))return;
+  const p=P(pid);p.taxes=p.taxes||[];let r=taxRec(p,y);if(!r){r={year:y};p.taxes.push(r)}logA('دفع مسقفات ومعارف '+p.name+' '+y);
   Object.assign(r,{masq:+val('x_m')||0,maaref:+val('x_a')||0,paid:true,paidDate:val('x_d')||today(),receipt:val('x_r'),acct:val('x_acct')});
   after('تم تسجيل دفع المسقفات والمعارف ✅');
 }
@@ -1811,6 +1987,11 @@ function taxTbl(list){
 /* ========== دليل الاستخدام ========== */
 const GUIDE_AR=[
 ['🧾 سند القبض','بعد تسجيل أي دفعة يأخذ سند قبض برقم متسلسل. اضغط «سند قبض» تحت الدفعة المدفوعة لطباعته بنسختين (للمالك وللمستأجر) مع المبلغ كتابةً، أو «إرسال السند» ليصل للمستأجر على الواتساب.'],
+['✂️ الخصم والإعفاء','لا تعدّل مبلغ الدفعة يدوياً: اضغط «خصم / إعفاء» تحت الدفعة، واختر السبب ومن وافق، فيصدر إشعار خصم مرقّم.'],
+['📒 كشف مدين / دائن','من «المستأجرون» أو التقارير: كل أجرة مستحقة (مدين) وكل دفعة أو خصم (دائن) مع الرصيد بعد كل حركة، كالكشف البنكي.'],
+['📊 قائمة الدخل والتقارير','من التقارير: أعمار الذمم (1-30، 31-60، 61-90، +90 يوماً)، قائمة الدخل لكل عقار أو للكل (نقدي واستحقاقي)، والإشغال والعائد السنوي (أضف قيمة العقار من تعديل العقار).'],
+['🤝 أتعاب الإدارة وتوزيع الأرباح','في صفحة الشركاء: نسبة أتعاب الإدارة تُخصم قبل التوزيع، وزر «صرف حصة» يسجّل ما استلمه كل شريك. كشف الشريك يعرض المستحق، وما صُرف، والباقي له. سحب المالك وتوزيعات الشركاء لا تُحسب مصروفاً.'],
+['🧮 للمحاسب والمدقق','«سجل العمليات» يحفظ كل عملية مالية ومن قام بها ومتى. «إقفال الفترة» يمنع أي تعديل على شهر أو سنة سلّمت أرقامها (يفتحها المالك بكلمة السر). «دفتر اليومية» ملف Excel بالقيود (مدين ودائن) لبرنامج المحاسب. «ضريبة المبيعات» تُفعَّل لكل عقد من داخل الوحدة.'],
 ['💼 الحسابات','في الصندوق قسم «أرصدة الحسابات»: الصندوق النقدي، الحساب البنكي، والمحفظة. عند كل قبض أو صرف اختر الحساب. «🔁 تحويل بين الحسابات» لإيداع النقد في البنك. «⚙️ الحسابات» لإضافة بنك آخر وكتابة الرصيد الافتتاحي. اضغط على أي حساب لكشفه، ولحساب البنك اكتب رصيد كشف البنك فيُظهر لك «مطابق» أو الفرق.'],
 ['🏦 الشيكات','عند تسجيل دفعة بطريقة «شيك» اكتب رقمه وبنكه وتاريخ استحقاقه، أو من داخل الوحدة اضغط «استلام شيكات العقد» لتسجيل كل الشيكات مرة واحدة. من صفحة «الشيكات» تتابع كل شيك: برسم التحصيل ← تم الإيداع ← تم التحصيل. إذا رجع الشيك اضغط «مرتجع»: يُلغى سنده تلقائياً وتعود الدفعة ديناً، ويمكنك فتح إجراء قانوني مباشرة.'],
 ['🔐 التأمين (الكفالة)','داخل الوحدة المؤجرة قسم «التأمين»: سجّل مبلغ التأمين المستلم فيصدر له سند. التأمين أمانة وليس ربحاً، فيظهر في الصندوق منفصلاً. عند الإخلاء: «رد التأمين» بسند صرف، أو «خصم مقابل أجرة» فيسدد الدفعات المتأخرة، أو «خصم أضرار» فيتحول المبلغ إلى إيراد. تقرير «التأمينات المحتجزة» يعرض كل تأمين وما بقي منه.'],
