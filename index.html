@@ -153,6 +153,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--g)}
 .cmv .ci{font-size:1.5rem}
 .cmv .cx{flex:1;min-width:0}
 .amt.in{color:var(--g)}.amt.out{color:var(--red)}
+.void{opacity:.7}.payl.void{background:#fbeeee;border-color:#efc9c9}
+.vstamp{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%) rotate(-18deg);border:5px solid #c62828;color:#c62828;font-size:54px;font-weight:900;padding:2px 26px;border-radius:12px;opacity:.55;pointer-events:none}
 .payl{background:#f2f8f6;border:1px solid #d6e7e0;border-radius:12px;padding:8px 10px;margin-top:8px}
 @media print{
   body{padding:0;background:#fff}
@@ -295,12 +297,13 @@ let tt;function toast(m){const e=document.getElementById('toast');e.textContent=
 function emptyBox(ic,txt,btn){return`<div class="card empty"><span class="ic">${ic}</span><p>${txt}</p>${btn||''}</div>`}
 
 /* ========== حالة الدفعة ========== */
-const paidOf=i=>sum(i.pays||[],p=>p.amt);
+const live=a=>(a||[]).filter(p=>!p.void);
+const paidOf=i=>sum(live(i.pays),p=>p.amt);
 const rem=i=>Math.max(0,Math.round(((+i.amount||0)-paidOf(i))*1000)/1000);
-function syncInst(i){i.pays=i.pays||[];const pa=paidOf(i),last=[...i.pays].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).pop();
-  i.paidAmount=pa;i.paid=i.pays.length>0&&rem(i)<=0.0005;i.paidDate=last?last.date:undefined;i.payMethod=last?last.method:undefined;i.rno=last?last.rno:undefined;
-  if(!i.pays.length){delete i.paidAmount;delete i.paidDate;delete i.payMethod;delete i.rno}}
-function allPays(f,t){const L=[];D.inst.forEach(i=>{const c=C(i.cid);if(!c)return;(i.pays||[]).forEach(p=>{if(p.date>=f&&p.date<=t)L.push({i,c,p})})});return L}
+function syncInst(i){i.pays=i.pays||[];const pa=paidOf(i),last=[...live(i.pays)].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).pop();
+  i.paidAmount=pa;i.paid=live(i.pays).length>0&&rem(i)<=0.0005;i.paidDate=last?last.date:undefined;i.payMethod=last?last.method:undefined;i.rno=last?last.rno:undefined;
+  if(!live(i.pays).length){delete i.paidAmount;delete i.paidDate;delete i.payMethod;delete i.rno}}
+function allPays(f,t){const L=[];D.inst.forEach(i=>{const c=C(i.cid);if(!c)return;live(i.pays).forEach(p=>{if(p.date>=f&&p.date<=t)L.push({i,c,p})})});return L}
 function st(i){if(i.paid)return'paid';const d=days(today(),i.due);if(d<0)return'late';if(d<=7)return'soon';return'up'}
 function tagOf(i){
   if(i.paid)return`<span class="tag t-g">مدفوعة ✔</span>`;
@@ -316,8 +319,10 @@ function instCard(i){
   const t=T(c.tid),p=P(c.pid),s=st(i);
   const chk=i.method==='شيك'?` • 🧾 شيك${i.checkNo?' رقم '+esc(i.checkNo):''}${i.bank?' - '+esc(i.bank):''}`:'';
   let btns;
-  const pl=(i.pays||[]).map(p=>`<div class="payl"><div class="row"><span>🧾 <b>${p.rno?'سند '+p.rno:'دفعة'}</b> • ${fmtDate(p.date)} • ${esc(p.method||'')}</span><b class="amt in">${money(p.amt)}</b></div>
-    <div class="btns"><button class="btn b-g" onclick="rcpt('${i.id}','${p.id}')">🧾 السند</button>${t&&t.phone?`<button class="btn b-w" onclick="rcptWa('${i.id}','${p.id}')">💬 إرسال</button>`:''}<button class="btn b-l" onclick="unpay('${i.id}','${p.id}')">↩️ إلغاء</button></div></div>`).join('');
+  const pl=(i.pays||[]).map(p=>p.void?`<div class="payl void"><div class="row"><span>🚫 <b>سند ${p.rno||''} — ملغى</b> • ${fmtDate(p.date)}</span><s class="amt">${money(p.amt)}</s></div>
+    <p class="mut">سبب الإلغاء: ${esc(p.void.reason)} • ${fmtDate(p.void.date)}${p.void.by?' • '+esc(p.void.by):''}</p><div class="btns"><button class="btn b-l" onclick="rcpt('${i.id}','${p.id}')">🧾 عرض السند الملغى</button></div></div>`
+    :`<div class="payl"><div class="row"><span>🧾 <b>${p.rno?'سند '+p.rno:'دفعة'}</b> • ${fmtDate(p.date)} • ${esc(p.method||'')}</span><b class="amt in">${money(p.amt)}</b></div>
+    <div class="btns"><button class="btn b-g" onclick="rcpt('${i.id}','${p.id}')">🧾 السند</button>${t&&t.phone?`<button class="btn b-w" onclick="rcptWa('${i.id}','${p.id}')">💬 إرسال</button>`:''}<button class="btn b-l" onclick="voidForm('pay','${i.id}','${p.id}')">🚫 إلغاء السند</button></div></div>`).join('');
   if(i.paid){
     btns=pl;
   }else{
@@ -340,7 +345,7 @@ function homeData(){
   return{td,
     late:D.inst.filter(i=>!i.paid&&i.due<td).sort((a,b)=>a.due.localeCompare(b.due)),
     month:D.inst.filter(i=>!i.paid&&i.due>=td&&i.due.slice(0,7)===ym).sort((a,b)=>a.due.localeCompare(b.due)),
-    coll:D.inst.filter(i=>(i.pays||[]).some(p=>(p.date||'').slice(0,7)===ym)).sort((a,b)=>(b.paidDate||'').localeCompare(a.paidDate||'')),
+    coll:D.inst.filter(i=>live(i.pays).some(p=>(p.date||'').slice(0,7)===ym)).sort((a,b)=>(b.paidDate||'').localeCompare(a.paidDate||'')),
     collAmt:sum(allPays(td.slice(0,8)+'01',td.slice(0,8)+'31'),x=>x.p.amt),
     att:D.inst.filter(i=>!i.paid&&days(td,i.due)<=7).sort((a,b)=>a.due.localeCompare(b.due)),
     utax:D.props.filter(p=>{const r=taxRec(p,yr());return taxDue(p,yr())>0&&!(r&&r.paid)}),
@@ -918,7 +923,21 @@ function doPay(id){
   after('تم تسجيل الدفعة ✅ — سند قبض رقم '+p.rno+(i.paid?'':' • الباقي '+money(rem(i))));
   rcpt(id,p.id);
 }
-function unpay(id,pid){if(!confirm('إلغاء تسجيل هذا المبلغ؟'))return;const i=I(id);i.pays=(i.pays||[]).filter(p=>pid?p.id!==pid:false);syncInst(i);after('تم الإلغاء')}
+function voidForm(kind,a,b){
+  const x=kind==='pay'?(I(a).pays||[]).find(p=>p.id===b):(D.cash||[]).find(c=>c.id===a);if(!x)return;
+  const no=kind==='pay'?x.rno:(x.kind==='out'?'ص-':'ق-')+x.no;
+  openSheet('🚫 إلغاء سند',`<div class="card warn" style="text-align:start"><div class="nm">إلغاء السند رقم ${no} — ${money(x.amt??x.amount)}</div>
+  <p>السند لا يُحذف: يبقى برقمه في السجل مختوماً «ملغى» مع السبب، ولا يدخل في أي مجموع. للتصحيح سجّل سنداً جديداً بالمبلغ الصحيح.</p></div>
+  <label>سبب الإلغاء (إجباري)</label><input id="v_r" placeholder="مثال: خطأ في المبلغ / شيك مرتجع / سُجّل مرتين">
+  <button class="btn b-r full big" onclick="doVoid('${kind}','${a}','${b||''}')">🚫 تأكيد إلغاء السند</button>
+  <button class="btn b-l full" onclick="closeAll()">رجوع</button>`);
+}
+function doVoid(kind,a,b){
+  const r=val('v_r').trim();if(r.length<3){toast('اكتب سبب الإلغاء');return}
+  const v={date:today(),reason:r,by:nameOf(cur)};
+  if(kind==='pay'){const i=I(a),p=i.pays.find(y=>y.id===b);p.void=v;syncInst(i)}else{(D.cash||[]).find(c=>c.id===a).void=v}
+  closeAll();after('تم إلغاء السند — بقي في السجل مختوماً «ملغى»');if(kind!=='pay')cashSheet();
+}
 function remind(id){
   const i=I(id),c=C(i.cid),t=T(c.tid),p=P(c.pid);
   const late=i.due<today();
@@ -1273,6 +1292,7 @@ function reportsSheet(){
   <button class="btn b-g full big" onclick="repLateOpen()">⚠️ تقرير المتأخرات</button>
   <button class="btn b-g full big" onclick="repLegal()">⚖️ تقرير الإجراءات القانونية</button>
   <button class="btn b-g full big" onclick="closeAll();cashSheet()">💰 الصندوق وكشف الحركة</button>
+  <button class="btn b-g full big" onclick="repVouchers()">🧾 سجل السندات (للتدقيق)</button>
   <div class="card soft mt"><div class="nm">💵 تقرير التحصيل لفترة</div>
     <div class="row2"><div><label>من</label><input type="date" id="r_from" value="${m}"></div><div><label>إلى</label><input type="date" id="r_to" value="${today()}"></div></div>
     <button class="btn b-g full" onclick="repCollect()">عرض تقرير التحصيل</button></div>
@@ -1311,7 +1331,7 @@ function tafqeet(a){
 }
 function vchHtml(o,copy){
   const isOut=o.kind==='out';
-  return`<div class="vch"><div class="vt"><div><h1>${isOut?'سند صرف':'سند قبض'}</h1><div class="mut">${esc(D.settings.owner||'أملاكي')}</div></div>
+  return`<div class="vch" style="position:relative">${o.void?`<div class="vstamp">ملغى</div>`:''}<div class="vt"><div><h1>${isOut?'سند صرف':'سند قبض'}</h1><div class="mut">${esc(D.settings.owner||'أملاكي')}</div></div>
   <div class="no ${isOut?'r':''}">رقم: ${o.no||'—'}</div><div><b>التاريخ:</b> ${fmtDate(o.date)}</div></div>
   <div class="vl"><span>${isOut?'صرفنا إلى السيد/ة':'استلمنا من السيد/ة'}</span><b>${esc(o.party||'—')}</b></div>
   <div class="vl"><span>مبلغاً وقدره</span><b><span class="vam">${money(o.amount)}</span></b></div>
@@ -1319,6 +1339,7 @@ function vchHtml(o,copy){
   <div class="vl"><span>وذلك عن</span><b>${esc(o.about||'')}</b></div>
   <div class="vl"><span>طريقة الدفع</span><b>${esc(o.method||'نقدي')}${o.check?' — '+esc(o.check):''}</b></div>
   ${o.note?`<div class="vl"><span>ملاحظات</span><b>${esc(o.note)}</b></div>`:''}
+  ${o.void?`<div class="vl" style="color:var(--red)"><span>⚠️ ملغى بتاريخ ${fmtDate(o.void.date)}</span><b>السبب: ${esc(o.void.reason)}${o.void.by?' — '+esc(o.void.by):''}</b></div>`:''}
   <div class="sign" style="margin-top:34px"><div>${isOut?'توقيع المستلم':'توقيع الدافع'}<br><br>.....................</div><div>${isOut?'توقيع الصارف':'توقيع المستلم'}<br><br>.....................</div></div>
   ${copy?`<div class="vcopy">${copy}</div>`:''}</div>`;
 }
@@ -1329,11 +1350,11 @@ function instVch(id,payId){
   if(!y.rno){y.rno=nextNo('r');syncInst(i);save()}
   const about=`إيجار ${p?p.name:''} - ${unitName(p,c&&c.uid)} عن الدفعة المستحقة بتاريخ ${fmtDate(i.due)}${i.svc?' (شاملة أجور خدمات '+money(i.svc)+')':''}`;
   const part=(+y.amt||0)<(+i.amount||0)-0.0005;
-  return{kind:'in',no:y.rno,date:y.date,party:t?t.name:'',amount:y.amt,about:about+(part?` — دفعة جزئية من أصل ${money(i.amount)}${i.paid?'':'، الباقي '+money(rem(i))}`:''),method:y.method,check:i.checkNo?('شيك رقم '+i.checkNo+(i.bank?' - '+i.bank:'')):'',note:y.note,phone:t&&t.phone};
+  return{void:y.void,kind:'in',no:y.rno,date:y.date,party:t?t.name:'',amount:y.amt,about:about+(part?` — دفعة جزئية من أصل ${money(i.amount)}${i.paid?'':'، الباقي '+money(rem(i))}`:''),method:y.method,check:i.checkNo?('شيك رقم '+i.checkNo+(i.bank?' - '+i.bank:'')):'',note:y.note,phone:t&&t.phone};
 }
 function rcpt(id,pid){vchOpen(instVch(id,pid),true)}
 function rcptWa(id,pid){
-  const o=instVch(id,pid);
+  const o=instVch(id,pid);if(o.void){toast('هذا السند ملغى');return}
   const msg=`🧾 سند قبض رقم ${o.no}\nالتاريخ: ${fmtDate(o.date)}\nاستلمنا من السيد/ة: ${o.party}\nمبلغ: ${money(o.amount)}\n(${tafqeet(o.amount)})\nوذلك عن: ${o.about}\nطريقة الدفع: ${o.method||'نقدي'}\n\n${D.settings.owner||''}\nشكراً لالتزامكم 🌹`;
   openExt('https://wa.me/'+waNum(o.phone)+'?text='+encodeURIComponent(msg));
 }
@@ -1359,10 +1380,26 @@ function cashRange(k){const t=today();
 function cashMoves(f,to){
   const L=[];
   D.inst.filter(i=>C(i.cid)).forEach(i=>{const c=C(i.cid),t=T(c.tid),p=P(c.pid);
-    (i.pays||[]).forEach(y=>L.push({src:'inst',id:i.id,pay:y.id,kind:'in',date:y.date,amount:+y.amt||0,cat:'إيجار',no:y.rno,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c.uid),method:y.method}))});
+    live(i.pays).forEach(y=>L.push({src:'inst',id:i.id,pay:y.id,kind:'in',date:y.date,amount:+y.amt||0,cat:'إيجار',no:y.rno,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c.uid),method:y.method}))});
   D.props.forEach(p=>(p.taxes||[]).filter(r=>r.paid).forEach(r=>L.push({src:'tax',pid:p.id,kind:'out',date:r.paidDate,amount:(+r.masq||0)+(+r.maaref||0),cat:'مسقفات ومعارف',desc:p.name+' — عام '+r.year+(r.receipt?' (إيصال '+r.receipt+')':'')})));
-  (D.cash||[]).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',id:x.id,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
+  live(D.cash).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',id:x.id,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
   return L.filter(x=>x.date&&x.date>=f&&x.date<=to).sort((a,b)=>b.date.localeCompare(a.date)||(b.no||0)-(a.no||0));
+}
+function voidList(f,to){const V=[];
+  D.inst.forEach(i=>{const c=C(i.cid),t=c&&T(c.tid);(i.pays||[]).filter(p=>p.void&&p.date>=f&&p.date<=to).forEach(p=>V.push({type:'سند قبض',no:p.rno,date:p.date,amount:p.amt,reason:p.void.reason,desc:t?t.name:'',open:`rcpt('${i.id}','${p.id}')`}))});
+  (D.cash||[]).filter(x=>x.void&&x.date>=f&&x.date<=to).forEach(x=>V.push({type:x.kind==='out'?'سند صرف':'سند قبض',no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,amount:x.amount,reason:x.void.reason,desc:[x.cat,x.party].filter(Boolean).join(' — '),open:`cashVch('${x.id}')`}));
+  return V}
+function repVouchers(f,to){
+  f=f||'0000-01-01';to=to||'9999-12-31';const R=[];
+  D.inst.forEach(i=>{const c=C(i.cid),t=c&&T(c.tid),p=c&&P(c.pid);(i.pays||[]).forEach(y=>R.push({s:'r',n:+y.rno||0,no:y.rno,type:'سند قبض (إيجار)',date:y.date,amt:y.amt,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c&&c.uid),v:y.void}))});
+  (D.cash||[]).forEach(x=>R.push({s:x.kind==='out'?'x':'k',n:+x.no||0,no:(x.kind==='out'?'ص-':'ق-')+x.no,type:x.kind==='out'?'سند صرف':'سند قبض (أخرى)',date:x.date,amt:x.amount,desc:[x.cat,x.party].filter(Boolean).join(' — '),v:x.void}));
+  const L=R.filter(x=>x.date>=f&&x.date<=to).sort((a,b)=>a.s.localeCompare(b.s)||(!!a.n-!!b.n)||a.n-b.n||(a.date||'').localeCompare(b.date||''));
+  const gaps=[];['r','k','x'].forEach(k=>{const ns=R.filter(x=>x.s===k&&x.n).map(x=>x.n).sort((a,b)=>a-b);for(let j=1;j<ns.length;j++)for(let m=ns[j-1]+1;m<ns[j];m++)gaps.push((k==='x'?'ص-':k==='k'?'ق-':'')+m)});
+  const rows=L.map(x=>tr([x.no||'<span class="mut">قبل الترقيم</span>',esc(x.type),fmtDate(x.date),esc(x.desc),x.v?`<s>${money(x.amt)}</s>`:money(x.amt),x.v?`<b class="red">ملغى</b> — ${esc(x.v.reason)}`:'ساري'],x.v?'late':''));
+  openRep(rHead('سجل السندات',f.startsWith('0000')?'كل الفترات':`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
+    rBoxes([['عدد السندات',L.length],['السارية',L.filter(x=>!x.v).length,'g'],['الملغاة',L.filter(x=>x.v).length,'r'],['أرقام مفقودة',gaps.length,gaps.length?'r':'g']])+
+    (gaps.length?`<p class="red"><b>⚠️ أرقام غير موجودة في التسلسل:</b> ${gaps.slice(0,60).join('، ')}</p>`:'<p>✅ التسلسل كامل بدون فجوات.</p>')+(L.some(x=>!x.n)?'<p class="mut">«قبل الترقيم»: دفعات سُجّلت قبل إضافة ترقيم السندات للتطبيق.</p>':'')+
+    tbl(['رقم السند','النوع','التاريخ','البيان','المبلغ','الحالة'],rows));
 }
 function cashTot(L){const i=sum(L.filter(x=>x.kind==='in'),x=>x.amount),o=sum(L.filter(x=>x.kind==='out'),x=>x.amount);return{i,o,b:i-o}}
 function cashSheet(){
@@ -1371,7 +1408,7 @@ function cashSheet(){
   const row=x=>`<div class="card"><div class="cmv"><span class="ci">${CASH_IC[x.cat]||'📌'}</span><div class="cx"><div class="nm">${esc(x.cat)}${x.no?` <small class="mut">#${x.no}</small>`:''}</div><div class="mut">${esc(x.desc||'')}</div><div class="mut">📅 ${fmtDate(x.date)}${x.method?' • '+esc(x.method):''}</div></div>
     <b class="amt ${x.kind}">${x.kind==='in'?'+':'−'} ${money(x.amount)}</b></div>
     ${x.src==='inst'?`<div class="btns"><button class="btn b-l" onclick="rcpt('${x.id}','${x.pay}')">🧾 سند القبض</button></div>`:''}
-    ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-l" onclick="cashForm('${x.kind}','${x.id}')">✏️ تعديل</button><button class="btn b-r" onclick="cashDel('${x.id}')">🗑️</button></div>`:''}</div>`;
+    ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-r" onclick="voidForm('cash','${x.id}')">🚫 إلغاء</button></div>`:''}</div>`;
   openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.b<0?'out':'in'}">${money(all.b)}</b></div></div>
   <div class="btns"><button class="btn b-g big" onclick="cashForm('in')">➕ إيراد</button><button class="btn b-r big" onclick="cashForm('out')">➖ مصروف</button></div>
   <div class="chips">${Object.keys(P0).map(k=>`<button class="chip ${k===cashPer?'on':''}" onclick="cashPer='${k}';cashSheet()">${P0[k]}</button>`).join('')}</div>
@@ -1380,7 +1417,8 @@ function cashSheet(){
   <button class="btn b-g full" onclick="repCash()">عرض كشف الصندوق</button></div>
   <button class="btn b-l full" onclick="catsSheet()">📋 أنواع المصاريف والإيرادات</button>
   <p class="mut">💡 دفعات الإيجار ودفع المسقفات تدخل الصندوق تلقائياً.</p>
-  ${L.length?L.slice(0,200).map(row).join(''):emptyBox('💰','لا توجد حركات في هذه الفترة')}`);
+  ${L.length?L.slice(0,200).map(row).join(''):emptyBox('💰','لا توجد حركات في هذه الفترة')}
+  ${(()=>{const V=voidList(f,to);return V.length?`<div class="sec">🚫 سندات ملغاة في هذه الفترة (${V.length})</div>`+V.map(v=>`<div class="card void"><div class="row"><div><div class="nm">${esc(v.type)} ${v.no}</div><div class="mut">${esc(v.desc)}</div><div class="mut">السبب: ${esc(v.reason)}</div></div><s class="amt">${money(v.amount)}</s></div><div class="btns"><button class="btn b-l" onclick="${v.open}">🧾 عرض</button></div></div>`).join(''):''})()}`);
 }
 function cashForm(kind,id){
   const x=id?(D.cash||[]).find(c=>c.id===id):{kind,date:today()};const out=kind==='out';
@@ -1405,9 +1443,9 @@ function cashSave(kind,id){
   Object.assign(x,{amount:a,date:val('k_date')||today(),cat,party:val('k_party'),pid:val('k_pid'),method:val('k_m'),note:val('k_note'),by:typeof cur!=='undefined'?nameOf(cur):''});
   save();render();cashSheet();toast((kind==='out'?'تم حفظ المصروف — سند صرف رقم ':'تم حفظ الإيراد — سند قبض رقم ')+x.no);
 }
-function cashDel(id){if(!confirm('حذف هذه الحركة من الصندوق؟'))return;D.cash=D.cash.filter(c=>c.id!==id);save();cashSheet();toast('تم الحذف')}
+function cashDel_old(id){if(!confirm('حذف هذه الحركة من الصندوق؟'))return;D.cash=D.cash.filter(c=>c.id!==id);save();cashSheet();toast('تم الحذف')}
 function cashVch(id){const x=D.cash.find(c=>c.id===id);if(!x)return;const p=x.pid&&P(x.pid);
-  vchOpen({kind:x.kind,no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,party:x.party,amount:x.amount,about:x.cat+(p?' — '+p.name:'')+(x.note?' — '+x.note:''),method:x.method},false)}
+  vchOpen({void:x.void,kind:x.kind,no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,party:x.party,amount:x.amount,about:x.cat+(p?' — '+p.name:'')+(x.note?' — '+x.note:''),method:x.method},false)}
 function repCash(){
   const f=val('k_from')||'0000-01-01',to=val('k_to')||'9999-12-31';
   const prev=cashTot(cashMoves('0000-01-01',addDays(f,-1))).b,L=cashMoves(f,to).reverse(),T0=cashTot(L);
@@ -1516,6 +1554,7 @@ function taxTbl(list){
 /* ========== دليل الاستخدام ========== */
 const GUIDE_AR=[
 ['🧾 سند القبض','بعد تسجيل أي دفعة يأخذ سند قبض برقم متسلسل. اضغط «سند قبض» تحت الدفعة المدفوعة لطباعته بنسختين (للمالك وللمستأجر) مع المبلغ كتابةً، أو «إرسال السند» ليصل للمستأجر على الواتساب.'],
+['🚫 إلغاء السندات','السند لا يُحذف أبداً. إذا أخطأت اضغط «إلغاء السند» واكتب السبب: يبقى السند برقمه مختوماً «ملغى» ولا يدخل في أي مجموع، ثم سجّل سنداً جديداً صحيحاً. من التقارير «سجل السندات» يعرض كل الأرقام بالتسلسل ويُنبّهك إلى أي رقم مفقود.'],
 ['🤝 الشركاء','في صفحة العقارات اضغط «🤝 الشركاء» تحت العقار، وأضف اسم كل شريك ونسبته (المجموع 100%). من نفس الصفحة اطبع «كشف توزيع الشركاء» لفترة: التحصيل والمدفوعات والصافي وحصة كل شريك. ومن التقارير «كشف حساب شريك» لكل عقاراته معاً.'],
 ['💰 الصندوق','من الرئيسية اضغط «الصندوق». دفعات الإيجار والمسقفات تدخل تلقائياً، وتضيف أنت أي إيراد آخر (➕) أو مصروف (➖) مثل الصيانة والكهرباء وسحب المالك، ولكل حركة سند قبض أو صرف. اختر الفترة لترى الإيرادات والمصروفات والصافي، واطبع «كشف الصندوق» مع الرصيد.'],
 ['🔒 البداية وكلمة السر','عند أول تشغيل تكتب اسمك ورقم واتسابك وكلمة سر. يعطيك التطبيق رمز استعادة أرسله إلى واتسابك واحتفظ بالرسالة. بعدها لا يفتح التطبيق إلا بكلمة السر، ويُقفل فوراً كلما خرجت منه أو أطفأت الشاشة. زر 🔒 في الأعلى يقفله فوراً.'],
