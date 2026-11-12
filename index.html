@@ -156,6 +156,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--g)}
 .void{opacity:.7}.payl.void{background:#fbeeee;border-color:#efc9c9}
 .vstamp{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%) rotate(-18deg);border:5px solid #c62828;color:#c62828;font-size:54px;font-weight:900;padding:2px 26px;border-radius:12px;opacity:.55;pointer-events:none}
 .vimgs{grid-template-columns:1fr 1fr}.vimgs .att{aspect-ratio:auto;background:#fff}.vimgs .att img{height:auto;object-fit:contain}
+.acrow{width:100%;background:none;border:0;border-bottom:1px dashed #cfdcd7;padding:10px 2px;font:inherit;color:inherit;text-align:start;cursor:pointer}
+@media print{.noprint{display:none!important}}
 .payl{background:#f2f8f6;border:1px solid #d6e7e0;border-radius:12px;padding:8px 10px;margin-top:8px}
 @media print{
   body{padding:0;background:#fff}
@@ -252,7 +254,7 @@ button.stat{width:100%;text-align:start;font-family:inherit;color:inherit;border
 <script>
 /* ========== البيانات ========== */
 const KEY='amlaki_v1';
-const EMPTY=()=>({props:[],tenants:[],contracts:[],inst:[],legal:[],cash:[],settings:{fs:''}});
+const EMPTY=()=>fix({props:[],tenants:[],contracts:[],inst:[],legal:[],cash:[],settings:{fs:''}});
 let D=load();
 let tab='home', payFilter='late', ctx=null;
 const UTYPES=['شقة','محل تجاري','مكتب','مستودع / مخزن','معرض','فيلا','منزل','غرفة','أرض','أخرى'];
@@ -260,7 +262,7 @@ const ICON={'شقة':'🏠','محل تجاري':'🏪','مكتب':'💼','مست
 const ic=t=>ICON[t]||'🔑';
 
 function load(){try{const x=JSON.parse(localStorage.getItem(KEY));return x&&x.props?fix(x):EMPTY()}catch(e){return EMPTY()}}
-function fix(x){x.legal=x.legal||[];x.cash=x.cash||[];(x.inst||[]).forEach(i=>{if(!i.pays){i.pays=i.paid?[{id:Math.random().toString(36).slice(2,9),amt:+(i.paidAmount??i.amount)||0,date:i.paidDate||i.due,method:i.payMethod||'',note:i.note||'',rno:i.rno}]:[]}});x.settings=x.settings||{fs:''};x.props.forEach(p=>p.units.forEach(u=>{u.type=u.type||'أخرى'}));return x}
+function fix(x){x.legal=x.legal||[];x.cash=x.cash||[];x.xfers=x.xfers||[];x.accts=x.accts||[{id:'cash',name:'الصندوق النقدي',type:'cash',open:0},{id:'bank',name:'الحساب البنكي',type:'bank',open:0},{id:'wallet',name:'المحفظة الإلكترونية',type:'wallet',open:0}];(x.inst||[]).forEach(i=>{if(!i.pays){i.pays=i.paid?[{id:Math.random().toString(36).slice(2,9),amt:+(i.paidAmount??i.amount)||0,date:i.paidDate||i.due,method:i.payMethod||'',note:i.note||'',rno:i.rno}]:[]}});x.settings=x.settings||{fs:''};x.props.forEach(p=>p.units.forEach(u=>{u.type=u.type||'أخرى'}));return x}
 function save(){localStorage.setItem(KEY,JSON.stringify(D))}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const P=id=>D.props.find(x=>x.id===id);
@@ -916,7 +918,8 @@ function payForm(id){
   <label>المبلغ المدفوع (د.أ)</label><input id="f_amt" type="number" inputmode="decimal" value="${rem(i)}">
   <p class="mut">💡 إذا دفع المستأجر جزءاً فقط اكتب ما دفعه، ويبقى الباقي ديناً عليه في نفس الدفعة.</p>
   <label>تاريخ الدفع</label><input id="f_date" type="date" data-today value="${today()}">
-  <label>طريقة الدفع</label><select id="f_m" onchange="document.getElementById('f_chq').style.display=this.value==='شيك'?'':'none'">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],i.method)}</select>
+  <label>طريقة الدفع</label><select id="f_m" onchange="document.getElementById('f_chq').style.display=this.value==='شيك'?'':'none';document.getElementById('f_acw').style.display=this.value==='شيك'?'none':'';setAcct('f_acct',this.value)">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],i.method)}</select>
+  <div id="f_acw" style="${i.method==='شيك'?'display:none':''}"><label>استُلم في حساب</label>${acctSel('f_acct',defAcct(i.method))}</div>
   <div id="f_chq" class="card soft" style="${i.method==='شيك'?'':'display:none'}"><div class="nm">🧾 بيانات الشيك</div>
     <div class="row2"><div><label>رقم الشيك</label><input id="f_cn" value="${esc(i.checkNo||'')}"></div><div><label>البنك</label><input id="f_cb" value="${esc(i.bank||'')}"></div></div>
     <label>تاريخ استحقاق الشيك</label><input id="f_cd" type="date" value="${i.due>today()?i.due:today()}">
@@ -930,7 +933,7 @@ function doPay(id){
   if(a>rem(i)+0.0005&&!confirm('المبلغ ('+money(a)+') أكبر من الباقي على هذه الدفعة ('+money(rem(i))+'). متابعة؟'))return;
   const m=val('f_m'),rd=val('f_date')||today();
   if(m==='شيك'&&!val('f_cn').trim()){toast('اكتب رقم الشيك');return}
-  const p={id:uid(),amt:a,date:m==='شيك'?(val('f_cd')||rd):rd,method:m,note:val('f_note'),rno:nextNo('r')};
+  const p={id:uid(),amt:a,date:m==='شيك'?(val('f_cd')||rd):rd,method:m,acct:m==='شيك'?'':val('f_acct'),note:val('f_note'),rno:nextNo('r')};
   if(m==='شيك'){p.chq={no:val('f_cn').trim(),bank:val('f_cb').trim(),due:p.date,recv:rd,st:'held',h:[{st:'held',date:rd}]};i.checkNo=p.chq.no;i.bank=p.chq.bank}
   i.pays=i.pays||[];i.pays.push(p);syncInst(i);
   after('تم تسجيل الدفعة ✅ — سند قبض رقم '+p.rno+(i.paid?'':' • الباقي '+money(rem(i))));
@@ -1439,6 +1442,7 @@ function cashSheet(){
     ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-l" onclick="cashFiles('${x.id}')">📎 ${x.imgs?'الفاتورة':'إرفاق'}</button><button class="btn b-r" onclick="voidForm('cash','${x.id}')">🚫 إلغاء</button></div>`:''}</div>`;
   openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.c<0?'out':'in'}">${money(all.c)}</b></div>
   ${all.h?`<div class="row mt"><span class="mut">منها 🔐 تأمينات محتجزة (أمانة للمستأجرين — ليست ربحاً)</span><b>${money(all.h)}</b></div><div class="row"><span class="mut">صافي ما يخصّك</span><b>${money(all.b)}</b></div>`:''}</div>
+  ${acctsHtml()}
   <div class="btns"><button class="btn b-g big" onclick="cashForm('in')">➕ إيراد</button><button class="btn b-r big" onclick="cashForm('out')">➖ مصروف</button></div>
   <div class="chips">${Object.keys(P0).map(k=>`<button class="chip ${k===cashPer?'on':''}" onclick="cashPer='${k}';cashSheet()">${P0[k]}</button>`).join('')}</div>
   <div class="stats"><div class="stat"><span>⬆️ الإيرادات</span><b>${money(T0.i)}</b></div><div class="stat red"><span>⬇️ المصروفات</span><b>${money(T0.o)}</b></div><div class="stat gold" style="grid-column:1/-1"><span>📊 الصافي ${P0[cashPer]||''}</span><b>${money(T0.b)}</b></div></div>
@@ -1462,7 +1466,8 @@ function cashForm(kind,id){
   <input id="k_nc" placeholder="اكتب اسم النوع الجديد" style="display:none">
   <label>${out?'صُرف إلى (اسم الشخص / الجهة)':'استُلم من (اسم الشخص / الجهة)'}</label><input id="k_party" value="${esc(x.party||'')}">
   <label>العقار (اختياري)</label><select id="k_pid"><option value="">— عام —</option>${opts(D.props.map(p=>[p.id,p.name]),x.pid)}</select>
-  <label>طريقة الدفع</label><select id="k_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],x.method)}</select>
+  <label>طريقة الدفع</label><select id="k_m" onchange="setAcct('k_acct',this.value)">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],x.method)}</select>
+  <label>${out?'دُفع من حساب':'استُلم في حساب'}</label>${acctSel('k_acct',x.acct||defAcct(x.method))}
   <label>البيان / ملاحظة</label><input id="k_note" value="${esc(x.note||'')}">
   <label>📎 ${out?'صورة الفاتورة / الإيصال':'مرفق (اختياري)'}</label><div class="card soft" id="k_att">${cashAttHtml()}</div>
   <input type="file" id="k_img" accept="${ACCEPT}" multiple hidden onchange="cashImgs(this)">
@@ -1476,7 +1481,7 @@ function cashSave(kind,id){
   D.cash=D.cash||[];let x=id&&D.cash.find(c=>c.id===id);
   if(!x){x={id:uid(),kind,no:nextNo(kind==='out'?'x':'k')};D.cash.push(x)}
   let cat=val('k_cat');if(cat==='__new'){cat=catAdd(kind,val('k_nc'));if(!cat){toast('اكتب اسم النوع الجديد');return}}
-  Object.assign(x,{amount:a,date:val('k_date')||today(),cat,party:val('k_party'),pid:val('k_pid'),method:val('k_m'),note:val('k_note'),imgs:[...tmpCash],by:typeof cur!=='undefined'?nameOf(cur):''});
+  Object.assign(x,{amount:a,date:val('k_date')||today(),cat,party:val('k_party'),pid:val('k_pid'),method:val('k_m'),acct:val('k_acct'),note:val('k_note'),imgs:[...tmpCash],by:typeof cur!=='undefined'?nameOf(cur):''});
   save();render();cashSheet();toast((kind==='out'?'تم حفظ المصروف — سند صرف رقم ':'تم حفظ الإيراد — سند قبض رقم ')+x.no);
 }
 function cashDel_old(id){if(!confirm('حذف هذه الحركة من الصندوق؟'))return;D.cash=D.cash.filter(c=>c.id!==id);save();cashSheet();toast('تم الحذف')}
@@ -1507,6 +1512,76 @@ function repCash(){
 
 
 
+
+/* ========== الحسابات: نقد، بنك، محفظة ========== */
+const ACT_IC={cash:'💵',bank:'🏦',wallet:'📱'};
+const AC=id=>D.accts.find(a=>a.id===id);
+function defAcct(m){const ty=m==='تحويل بنكي'?'bank':m==='محفظة إلكترونية'?'wallet':'cash';return(D.accts.find(a=>a.type===ty)||D.accts.find(a=>a.type==='cash')||D.accts[0]||{}).id}
+function acctSel(id,sel){return`<select id="${id}">${opts(D.accts.map(a=>[a.id,(ACT_IC[a.type]||'💰')+' '+a.name]),sel)}</select>`}
+function setAcct(id,m){const e=document.getElementById(id);if(e)e.value=defAcct(m)}
+function acctMoves(){
+  const L=[],okA=a=>a&&AC(a)?a:defAcct('نقدي');
+  D.inst.forEach(i=>{const c=C(i.cid);if(!c)return;const t=T(c.tid),pr=P(c.pid),ds=(t?t.name:'')+' — '+(pr?pr.name:'')+' - '+unitName(pr,c.uid);
+    live(i.pays).forEach(p=>{if(p.method==='خصم من التأمين')return;
+      if(p.chq){if(p.chq.st!=='cleared')return;const cl=[...p.chq.h].reverse().find(h=>h.st==='cleared');L.push({acct:okA(p.chq.acct||defAcct('تحويل بنكي')),date:cl?cl.date:p.date,amt:+p.amt,cat:'تحصيل شيك '+p.chq.no,no:p.rno,desc:ds})}
+      else L.push({acct:okA(p.acct||defAcct(p.method)),date:p.date,amt:+p.amt,cat:'إيجار',no:p.rno,desc:ds})})});
+  live(D.cash).forEach(x=>L.push({acct:okA(x.acct||defAcct(x.method)),date:x.date,amt:x.kind==='out'?-x.amount:+x.amount,cat:x.cat,no:(x.kind==='out'?'ص-':'ق-')+x.no,desc:[x.party,x.note].filter(Boolean).join(' — ')}));
+  D.contracts.forEach(c=>{const d=c.dep;if(!d||d.void)return;const t=T(c.tid);
+    if(d.method!=='كمبيالة')L.push({acct:okA(d.acct||defAcct(d.method)),date:d.date,amt:+d.amt,cat:'تأمين مستلم 🔐',no:'ت-'+d.no,desc:t?t.name:''});
+    live(d.moves).filter(m=>m.type==='refund').forEach(m=>L.push({acct:okA(m.acct||defAcct(m.method)),date:m.date,amt:-m.amt,cat:'رد تأمين 🔐',no:'تر-'+m.no,desc:t?t.name:''}))});
+  D.props.forEach(p=>(p.taxes||[]).filter(r=>r.paid).forEach(r=>L.push({acct:okA(r.acct),date:r.paidDate,amt:-((+r.masq||0)+(+r.maaref||0)),cat:'مسقفات ومعارف',no:r.receipt||'',desc:p.name+' '+r.year})));
+  live(D.xfers).forEach(x=>{L.push({acct:x.from,date:x.date,amt:-x.amt,cat:'تحويل إلى '+(AC(x.to)||{}).name,no:'تح-'+x.no,desc:x.note||'',xf:x.id});L.push({acct:x.to,date:x.date,amt:+x.amt,cat:'تحويل من '+(AC(x.from)||{}).name,no:'تح-'+x.no,desc:x.note||'',xf:x.id})});
+  return L.filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date));
+}
+function acctBal(id,to){to=to||'9999-12-31';const a=AC(id);return(+a.open||0)+sum(acctMoves().filter(x=>x.acct===id&&x.date<=to),x=>x.amt)}
+function underColl(){return sum(allCheques().filter(x=>!x.p.void&&['held','deposited'].includes(x.p.chq.st)),x=>x.p.amt)}
+function acctsHtml(){
+  const uc=underColl(),tot=sum(D.accts,a=>acctBal(a.id))+uc;
+  return`<div class="card soft"><div class="nm">💼 أرصدة الحسابات</div>${D.accts.map(a=>{const b=acctBal(a.id);return`<button class="row acrow" onclick="repAcct('${a.id}')"><span>${ACT_IC[a.type]||'💰'} ${esc(a.name)}</span><b class="amt ${b<0?'out':'in'}">${money(b)} ‹</b></button>`}).join('')}
+  ${uc?`<div class="row acrow"><span>🧾 شيكات برسم التحصيل</span><b>${money(uc)}</b></div>`:''}
+  <div class="row acrow" style="border-top:2px solid var(--g)"><b>المجموع</b><b>${money(tot)}</b></div>
+  <div class="btns"><button class="btn b-g" onclick="xferForm()">🔁 تحويل بين الحسابات</button><button class="btn b-l" onclick="acctsSheet()">⚙️ الحسابات</button></div></div>`;
+}
+function acctsSheet(eid){
+  const e=eid?AC(eid):{type:'bank',open:0};
+  openSheet('⚙️ الحسابات',`${D.accts.map(a=>`<div class="card"><div class="row"><div><div class="nm">${ACT_IC[a.type]||'💰'} ${esc(a.name)}</div><div class="mut">رصيد افتتاحي: ${money(a.open)}${a.openDate?' بتاريخ '+fmtDate(a.openDate):''}</div></div><b>${money(acctBal(a.id))}</b></div>
+    <div class="btns"><button class="btn b-l" onclick="acctsSheet('${a.id}')">✏️ تعديل</button><button class="btn b-l" onclick="repAcct('${a.id}')">📄 كشف الحساب</button>${D.accts.length>1?`<button class="btn b-r" onclick="acctDel('${a.id}')">🗑️</button>`:''}</div></div>`).join('')}
+  <div class="card"><div class="nm">${eid?'✏️ تعديل حساب':'➕ حساب جديد'}</div>
+  <label>اسم الحساب</label><input id="ac_n" value="${esc(e.name||'')}" placeholder="مثال: بنك الإسكان - حساب جاري">
+  <div class="row2"><div><label>النوع</label><select id="ac_t">${opts([['cash','💵 نقدي'],['bank','🏦 بنك'],['wallet','📱 محفظة']],e.type)}</select></div><div><label>الرصيد الافتتاحي</label><input id="ac_o" type="number" inputmode="decimal" value="${e.open||0}"></div></div>
+  <label>تاريخ الرصيد الافتتاحي</label><input id="ac_d" type="date" value="${e.openDate||''}">
+  <button class="btn b-g full big" onclick="acctSave('${eid||''}')">💾 حفظ</button>${eid?`<button class="btn b-l full" onclick="acctsSheet()">إلغاء التعديل</button>`:''}</div>
+  <button class="btn b-l full" onclick="cashSheet()">↩️ رجوع إلى الصندوق</button>`);
+}
+function acctSave(eid){const n=val('ac_n').trim();if(!n){toast('اكتب اسم الحساب');return}
+  let a=eid&&AC(eid);if(!a){a={id:uid()};D.accts.push(a)}Object.assign(a,{name:n,type:val('ac_t'),open:+val('ac_o')||0,openDate:val('ac_d')});save();acctsSheet();toast('تم حفظ الحساب ✅')}
+function acctDel(id){if(acctMoves().some(x=>x.acct===id)||live(D.xfers).some(x=>x.from===id||x.to===id)){toast('لا يمكن حذف حساب عليه حركات');return}
+  if(!confirm('حذف الحساب؟'))return;D.accts=D.accts.filter(a=>a.id!==id);save();acctsSheet()}
+function xferForm(){
+  if(D.accts.length<2){toast('أضف حساباً ثانياً أولاً');return}
+  openSheet('🔁 تحويل بين الحسابات',`<p class="mut">مثال: إيداع نقد الصندوق في البنك، أو سحب من البنك إلى الصندوق. التحويل لا يغيّر الإيرادات ولا المصروفات.</p>
+  <label>من حساب</label>${acctSel('xf_f','cash')}<label>إلى حساب</label>${acctSel('xf_t',(D.accts.find(a=>a.type==='bank')||D.accts[1]).id)}
+  <div class="row2"><div><label>المبلغ</label><input id="xf_a" type="number" inputmode="decimal"></div><div><label>التاريخ</label><input id="xf_d" type="date" value="${today()}"></div></div>
+  <label>ملاحظة / رقم إشعار الإيداع</label><input id="xf_n">
+  <button class="btn b-g full big" onclick="xferSave()">💾 حفظ التحويل</button><button class="btn b-l full" onclick="cashSheet()">رجوع</button>`);
+}
+function xferSave(){const f=val('xf_f'),t=val('xf_t'),a=+val('xf_a');if(f===t){toast('اختر حسابين مختلفين');return}if(!(a>0)){toast('اكتب المبلغ');return}
+  D.xfers.push({id:uid(),no:nextNo('t'),from:f,to:t,amt:a,date:val('xf_d')||today(),note:val('xf_n'),by:nameOf(cur)});save();cashSheet();toast('تم التحويل ✅')}
+function repAcct(id,f,to,bank){
+  const a=AC(id);f=f||(today().slice(0,8)+'01');to=to||today();
+  const all=acctMoves().filter(x=>x.acct===id),prev=(+a.open||0)+sum(all.filter(x=>x.date<f),x=>x.amt),L=all.filter(x=>x.date>=f&&x.date<=to);
+  let b=prev;const rows=L.map(x=>{b+=x.amt;return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.amt>0?money(x.amt):'',x.amt<0?`<b class="red">${money(-x.amt)}</b>`:'',money(b)])});
+  const diff=bank!==undefined&&bank!==''?(+bank)-b:null;
+  openRep(rHead('كشف حساب: '+a.name,`${ACT_IC[a.type]||''} من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
+    `<div class="noprint card soft" style="margin-bottom:10px"><div class="row2"><div><label>من</label><input type="date" id="ra_f" value="${f}"></div><div><label>إلى</label><input type="date" id="ra_t" value="${to}"></div></div>
+    ${a.type!=='cash'?`<label>🔍 مطابقة: الرصيد في كشف ${a.type==='bank'?'البنك':'المحفظة'} بتاريخ «إلى»</label><input id="ra_b" type="number" inputmode="decimal" value="${bank??''}">`:''}
+    <button class="btn b-g full" onclick="repAcct('${id}',val('ra_f'),val('ra_t'),${a.type!=='cash'?"val('ra_b')":'undefined'})">تحديث الكشف</button></div>`+
+    rBoxes([['الرصيد السابق',money(prev)],['المقبوضات',money(sum(L.filter(x=>x.amt>0),x=>x.amt)),'g'],['المدفوعات',money(-sum(L.filter(x=>x.amt<0),x=>x.amt)),'r'],['الرصيد في التطبيق',money(b),'o'],
+      ...(diff!==null?[['رصيد '+(a.type==='bank'?'البنك':'المحفظة'),money(+bank)],['الفرق',Math.abs(diff)<0.001?'✅ مطابق':money(diff),Math.abs(diff)<0.001?'g':'r']]:[])])+
+    (diff!==null&&Math.abs(diff)>=0.001?`<p class="red">⚠️ يوجد فرق ${money(diff)} — راجع: شيكات أودعت ولم تُسجَّل محصّلة، عمولات بنكية لم تُسجَّل كمصروف، أو تحويلات لم تُسجَّل.</p>`:'')+
+    tbl(['التاريخ','المرجع','البيان','التفاصيل','مقبوض','مدفوع','الرصيد'],rows,['المجموع','','','',money(sum(L.filter(x=>x.amt>0),x=>x.amt)),money(-sum(L.filter(x=>x.amt<0),x=>x.amt)),money(b)]));
+}
+
 /* ========== الشيكات ========== */
 const CHQ_ST={held:['برسم التحصيل','t-org'],deposited:['مُودَع في البنك','t-gr'],cleared:['محصّل ✔','t-g'],bounced:['مرتجع ✗','t-red']};
 const chqTag=q=>`<span class="tag ${CHQ_ST[q.st][1]}">${CHQ_ST[q.st][0]}</span>`;
@@ -1533,9 +1608,10 @@ function chequesSheet(){
 function chqSet(iid,pid,st){const i=I(iid),p=i.pays.find(x=>x.id===pid);
   openSheet(st==='deposited'?'🏦 إيداع الشيك':'✅ تحصيل الشيك',`<div class="card soft"><div class="nm">شيك ${esc(p.chq.no)} — ${money(p.amt)}</div></div>
   <label>${st==='deposited'?'تاريخ الإيداع':'تاريخ التحصيل'}</label><input id="cq_d" type="date" value="${today()}">
+  ${st==='deposited'?`<label>أُودع في حساب</label>${acctSel('cq_a',(D.accts.find(a=>a.type==='bank')||D.accts[0]).id)}`:''}
   <button class="btn b-g full big" onclick="chqSetSave('${iid}','${pid}','${st}')">💾 حفظ</button><button class="btn b-l full" onclick="chequesSheet()">رجوع</button>`)}
 function chqSetSave(iid,pid,st){const i=I(iid),p=i.pays.find(x=>x.id===pid);
-  p.chq.st=st;p.chq.h.push({st,date:val('cq_d')||today()});save();render();chequesSheet();toast(st==='deposited'?'تم تسجيل الإيداع 🏦':'تم تحصيل الشيك ✅')}
+  p.chq.st=st;p.chq.h.push({st,date:val('cq_d')||today()});if(st==='deposited')p.chq.acct=val('cq_a');save();render();chequesSheet();toast(st==='deposited'?'تم تسجيل الإيداع 🏦':'تم تحصيل الشيك ✅')}
 function chqBounce(iid,pid){const i=I(iid),p=i.pays.find(x=>x.id===pid),c=C(i.cid),t=T(c.tid);
   openSheet('❌ شيك مرتجع',`<div class="card warn" style="text-align:start"><div class="nm">شيك ${esc(p.chq.no)} — ${money(p.amt)} — ${esc(t?t.name:'')}</div>
   <p>سيُلغى سند القبض رقم ${p.rno} تلقائياً (مختوماً «ملغى — شيك مرتجع»)، وتعود الدفعة ديناً على المستأجر.</p></div>
@@ -1591,12 +1667,13 @@ function depForm(cid){
   openSheet('🔐 تسجيل تأمين مستلم',`<div class="card soft"><p>التأمين (الكفالة) مبلغ يدفعه المستأجر ضماناً، ويُرَدّ له عند الإخلاء أو يُخصم منه. يدخل الصندوق كـ<b>أمانة</b> لا كإيراد.</p></div>
   <label>مبلغ التأمين (د.أ)</label><input id="d_a" type="number" inputmode="decimal">
   <label>تاريخ الاستلام</label><input id="d_d" type="date" value="${today()}">
-  <label>طريقة الدفع</label><select id="d_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية','كمبيالة'])}</select>
+  <label>طريقة الدفع</label><select id="d_m" onchange="setAcct('d_acct',this.value)">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية','كمبيالة'])}</select>
+  <label>استُلم في حساب</label>${acctSel('d_acct','cash')}
   <label>ملاحظة</label><input id="d_n" placeholder="مثال: شيك رقم 123 بنك الإسكان">
   <button class="btn b-g full big" onclick="depSave('${cid}')">💾 حفظ وإصدار سند استلام التأمين</button>`);
 }
 function depSave(cid){const a=+val('d_a');if(!(a>0)){toast('اكتب مبلغ التأمين');return}
-  const c=C(cid);c.dep={amt:a,date:val('d_d')||today(),method:val('d_m'),note:val('d_n'),no:nextNo('d'),moves:[]};
+  const c=C(cid);c.dep={amt:a,date:val('d_d')||today(),method:val('d_m'),acct:val('d_acct'),note:val('d_n'),no:nextNo('d'),moves:[]};
   closeSheet();after('تم تسجيل التأمين ✅ — سند ت-'+c.dep.no);depVch(cid)}
 function depMoveForm(cid,type){
   const c=C(cid),bal=depBal(c),late=D.inst.filter(i=>i.cid===cid&&!i.paid&&i.due<=today()),lt=sum(late,rem);
@@ -1607,7 +1684,7 @@ function depMoveForm(cid,type){
   ${type==='damage'?'<p class="mut">مبلغ الأضرار المخصوم يتحول من أمانة إلى إيراد لك (تعويض)، ويظهر في الصندوق.</p>':''}</div>
   <label>المبلغ (د.أ)</label><input id="dm_a" type="number" inputmode="decimal" value="${def}">
   <label>التاريخ</label><input id="dm_d" type="date" value="${today()}">
-  ${type==='refund'?`<label>طريقة الرد</label><select id="dm_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'])}</select>`:''}
+  ${type==='refund'?`<label>طريقة الرد</label><select id="dm_m" onchange="setAcct('dm_acct',this.value)">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'])}</select><label>دُفع من حساب</label>${acctSel('dm_acct',c.dep.acct||'cash')}`:''}
   <label>${type==='damage'?'وصف الأضرار (إجباري)':'ملاحظة'}</label><input id="dm_r">
   <button class="btn b-g full big" onclick="depMoveSave('${cid}','${type}')">💾 حفظ وإصدار السند</button>`);
 }
@@ -1615,7 +1692,7 @@ function depMoveSave(cid,type){
   const c=C(cid),bal=depBal(c),a=+val('dm_a'),r=val('dm_r').trim();
   if(!(a>0)){toast('اكتب المبلغ');return}if(a>bal+0.0005){toast('المبلغ أكبر من التأمين المحتجز ('+money(bal)+')');return}
   if(type==='damage'&&r.length<3){toast('اكتب وصف الأضرار');return}
-  const m={id:uid(),type,amt:a,date:val('dm_d')||today(),reason:r,method:type==='refund'?val('dm_m'):'',no:nextNo(type==='refund'?'dr':'dd')};
+  const m={id:uid(),type,amt:a,date:val('dm_d')||today(),reason:r,method:type==='refund'?val('dm_m'):'',acct:type==='refund'?val('dm_acct'):'',no:nextNo(type==='refund'?'dr':'dd')};
   if(type==='rent'){let left=a;m.pays=[];
     const L=D.inst.filter(i=>i.cid===cid&&!i.paid&&i.due<=today()).sort((x,y)=>x.due.localeCompare(y.due));
     const tot=sum(L,rem);if(a>tot+0.0005){toast('المبلغ أكبر من الأجرة المستحقة ('+money(tot)+')');return}
@@ -1716,12 +1793,13 @@ function taxPayForm(pid,y){
   <label>المعارف (د.أ)</label><input id="x_a" type="number" inputmode="decimal" value="${r.maaref??p.maaref??''}">
   <label>تاريخ الدفع</label><input id="x_d" type="date" data-today value="${today()}">
   <label>رقم الإيصال (اختياري)</label><input id="x_r">
+  <label>دُفع من حساب</label>${acctSel('x_acct','cash')}
   <button class="btn b-g full big" onclick="taxPay('${pid}',${y})">✅ حفظ الدفع</button>
   <button class="btn b-l full" onclick="clearSheet()">🧹 مسح الحقول</button>`);
 }
 function taxPay(pid,y){
   const p=P(pid);p.taxes=p.taxes||[];let r=taxRec(p,y);if(!r){r={year:y};p.taxes.push(r)}
-  Object.assign(r,{masq:+val('x_m')||0,maaref:+val('x_a')||0,paid:true,paidDate:val('x_d')||today(),receipt:val('x_r')});
+  Object.assign(r,{masq:+val('x_m')||0,maaref:+val('x_a')||0,paid:true,paidDate:val('x_d')||today(),receipt:val('x_r'),acct:val('x_acct')});
   after('تم تسجيل دفع المسقفات والمعارف ✅');
 }
 function taxUnpay(pid,y){if(!confirm('إلغاء تسجيل الدفع؟'))return;const r=taxRec(P(pid),y);if(r){r.paid=false;delete r.paidDate}after('تم الإلغاء')}
@@ -1733,6 +1811,7 @@ function taxTbl(list){
 /* ========== دليل الاستخدام ========== */
 const GUIDE_AR=[
 ['🧾 سند القبض','بعد تسجيل أي دفعة يأخذ سند قبض برقم متسلسل. اضغط «سند قبض» تحت الدفعة المدفوعة لطباعته بنسختين (للمالك وللمستأجر) مع المبلغ كتابةً، أو «إرسال السند» ليصل للمستأجر على الواتساب.'],
+['💼 الحسابات','في الصندوق قسم «أرصدة الحسابات»: الصندوق النقدي، الحساب البنكي، والمحفظة. عند كل قبض أو صرف اختر الحساب. «🔁 تحويل بين الحسابات» لإيداع النقد في البنك. «⚙️ الحسابات» لإضافة بنك آخر وكتابة الرصيد الافتتاحي. اضغط على أي حساب لكشفه، ولحساب البنك اكتب رصيد كشف البنك فيُظهر لك «مطابق» أو الفرق.'],
 ['🏦 الشيكات','عند تسجيل دفعة بطريقة «شيك» اكتب رقمه وبنكه وتاريخ استحقاقه، أو من داخل الوحدة اضغط «استلام شيكات العقد» لتسجيل كل الشيكات مرة واحدة. من صفحة «الشيكات» تتابع كل شيك: برسم التحصيل ← تم الإيداع ← تم التحصيل. إذا رجع الشيك اضغط «مرتجع»: يُلغى سنده تلقائياً وتعود الدفعة ديناً، ويمكنك فتح إجراء قانوني مباشرة.'],
 ['🔐 التأمين (الكفالة)','داخل الوحدة المؤجرة قسم «التأمين»: سجّل مبلغ التأمين المستلم فيصدر له سند. التأمين أمانة وليس ربحاً، فيظهر في الصندوق منفصلاً. عند الإخلاء: «رد التأمين» بسند صرف، أو «خصم مقابل أجرة» فيسدد الدفعات المتأخرة، أو «خصم أضرار» فيتحول المبلغ إلى إيراد. تقرير «التأمينات المحتجزة» يعرض كل تأمين وما بقي منه.'],
 ['📎 فواتير المصاريف','عند إضافة مصروف في الصندوق اضغط «📷 إرفاق فاتورة» وصوّر الفاتورة أو ارفع PDF. المصروف بدون مستند يظهر بعلامة «بدون فاتورة» وبـ ✗ في كشف الصندوق. يمكنك إرفاق المستند لاحقاً من زر «📎 إرفاق» تحت الحركة.'],
