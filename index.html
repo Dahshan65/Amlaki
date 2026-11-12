@@ -594,6 +594,7 @@ function unitDetail(pid,unitId){
       <div class="kv"><span>طريقة الدفع</span><b>${esc(c.method)}</b></div>
       <button class="btn b-g full big" onclick="contractEdit('${c.id}')">✏️ تعديل العقد (الأجرة، المدة، طريقة الدفع...)</button>
       <div class="btns"><button class="btn b-r" onclick="endContract('${c.id}')">🚪 إنهاء العقد / إخلاء</button></div></div>
+    ${depBlock(c)}
     ${imgsBlock(c)}
     <div class="sec">💰 وضع الدفعات</div>
     <div class="stats">
@@ -620,7 +621,7 @@ function endContract(cid){
   if(!confirm('إنهاء العقد اليوم وإخلاء الوحدة؟\nستُحذف الدفعات القادمة غير المستحقة، وتبقى الدفعات المتأخرة مسجّلة على المستأجر.'))return;
   const c=C(cid),td=today();c.end=td;
   D.inst=D.inst.filter(i=>!(i.cid===cid&&!i.paid&&!paidOf(i)&&i.due>=td));
-  after('تم إنهاء العقد — الوحدة الآن شاغرة');
+  after('تم إنهاء العقد — الوحدة الآن شاغرة'+(depBal(c)>0?' • تذكير: تأمين محتجز '+money(depBal(c))+' — ردّه أو اخصم منه':''));
 }
 
 /* ========== التعديل ========== */
@@ -925,8 +926,8 @@ function doPay(id){
   rcpt(id,p.id);
 }
 function voidForm(kind,a,b){
-  const x=kind==='pay'?(I(a).pays||[]).find(p=>p.id===b):(D.cash||[]).find(c=>c.id===a);if(!x)return;
-  const no=kind==='pay'?x.rno:(x.kind==='out'?'ص-':'ق-')+x.no;
+  const x=kind==='pay'?(I(a).pays||[]).find(p=>p.id===b):kind==='dep'?C(a).dep:kind==='depm'?(C(a).dep.moves||[]).find(m=>m.id===b):(D.cash||[]).find(c=>c.id===a);if(!x)return;
+  const no=kind==='pay'?x.rno:kind==='dep'?'ت-'+x.no:kind==='depm'?(x.type==='refund'?'تر-':'تخ-')+x.no:(x.kind==='out'?'ص-':'ق-')+x.no;
   openSheet('🚫 إلغاء سند',`<div class="card warn" style="text-align:start"><div class="nm">إلغاء السند رقم ${no} — ${money(x.amt??x.amount)}</div>
   <p>السند لا يُحذف: يبقى برقمه في السجل مختوماً «ملغى» مع السبب، ولا يدخل في أي مجموع. للتصحيح سجّل سنداً جديداً بالمبلغ الصحيح.</p></div>
   <label>سبب الإلغاء (إجباري)</label><input id="v_r" placeholder="مثال: خطأ في المبلغ / شيك مرتجع / سُجّل مرتين">
@@ -936,8 +937,11 @@ function voidForm(kind,a,b){
 function doVoid(kind,a,b){
   const r=val('v_r').trim();if(r.length<3){toast('اكتب سبب الإلغاء');return}
   const v={date:today(),reason:r,by:nameOf(cur)};
-  if(kind==='pay'){const i=I(a),p=i.pays.find(y=>y.id===b);p.void=v;syncInst(i)}else{(D.cash||[]).find(c=>c.id===a).void=v}
-  closeAll();after('تم إلغاء السند — بقي في السجل مختوماً «ملغى»');if(kind!=='pay')cashSheet();
+  if(kind==='pay'){const i=I(a),p=i.pays.find(y=>y.id===b);p.void=v;syncInst(i)}
+  else if(kind==='dep'){C(a).dep.void=v}
+  else if(kind==='depm'){const m=C(a).dep.moves.find(y=>y.id===b);m.void=v;(m.pays||[]).forEach(([ii,pp])=>{const i=I(ii);if(!i)return;const y=(i.pays||[]).find(z=>z.id===pp);if(y){y.void={...v,reason:'إلغاء الخصم من التأمين: '+v.reason}}syncInst(i)})}
+  else{(D.cash||[]).find(c=>c.id===a).void=v}
+  closeAll();after('تم إلغاء السند — بقي في السجل مختوماً «ملغى»');if(kind==='cash')cashSheet();
 }
 function remind(id){
   const i=I(id),c=C(i.cid),t=T(c.tid),p=P(c.pid);
@@ -1238,7 +1242,7 @@ function contractBlock(c){
   const p=P(c.pid),t=T(c.tid),s=cStats(c),td=today();
   const rows=s.ins.map((i,k)=>tr([k+1,fmtDate(i.due),money(i.amount),i.paid?'✔ مدفوعة':paidOf(i)>0?'جزئي — باقي '+money(rem(i)):i.due<td?'متأخرة':'قادمة',paidOf(i)>0?fmtDate(i.paidDate):'—',paidOf(i)>0?money(paidOf(i)):'—',esc(paidOf(i)>0?(i.payMethod||''):(i.method||''))+(i.checkNo?' #'+esc(i.checkNo):'')],i.paid?'':i.due<td?'late':''));
   return`<h2>📄 ${esc(p?p.name:'')} - ${esc(unitName(p,c.uid))} <small>المستأجر: ${esc(t?t.name:'')} • من ${fmtDate(c.start)} إلى ${fmtDate(c.end)} • ${money(c.amount)} ${FREQ[c.freq]||''}${c.svc?' + خدمات '+money(c.svc):''}</small></h2>`+
-    rBoxes([['قيمة العقد',money(s.total)],['المستلم',money(s.paid),'g'],['المتأخر',money(s.late),'r'],['الباقي',money(s.rest),'o']])+
+    rBoxes([['قيمة العقد',money(s.total)],...(c.dep&&!c.dep.void?[['🔐 التأمين المحتجز',money(depBal(c))]]:[]),['المستلم',money(s.paid),'g'],['المتأخر',money(s.late),'r'],['الباقي',money(s.rest),'o']])+
     tbl(['#','الاستحقاق','المبلغ','الحالة','تاريخ الدفع','المدفوع','الطريقة'],rows);
 }
 function repAll(){
@@ -1295,6 +1299,7 @@ function reportsSheet(){
   <button class="btn b-g full big" onclick="repLegal()">⚖️ تقرير الإجراءات القانونية</button>
   <button class="btn b-g full big" onclick="closeAll();cashSheet()">💰 الصندوق وكشف الحركة</button>
   <button class="btn b-g full big" onclick="repVouchers()">🧾 سجل السندات (للتدقيق)</button>
+  <button class="btn b-g full big" onclick="repDeps()">🔐 تقرير التأمينات المحتجزة</button>
   <div class="card soft mt"><div class="nm">💵 تقرير التحصيل لفترة</div>
     <div class="row2"><div><label>من</label><input type="date" id="r_from" value="${m}"></div><div><label>إلى</label><input type="date" id="r_to" value="${today()}"></div></div>
     <button class="btn b-g full" onclick="repCollect()">عرض تقرير التحصيل</button></div>
@@ -1332,10 +1337,10 @@ function tafqeet(a){
   return'فقط '+(d?wordsAr(d)+' دينار أردني':'')+(d&&f?' و':'')+(f?wordsAr(f)+' فلس':'')+(!d&&!f?'صفر دينار':'')+' لا غير';
 }
 function vchHtml(o,copy){
-  const isOut=o.kind==='out';
-  return`<div class="vch" style="position:relative">${o.void?`<div class="vstamp">ملغى</div>`:''}<div class="vt"><div><h1>${isOut?'سند صرف':'سند قبض'}</h1><div class="mut">${esc(D.settings.owner||'أملاكي')}</div></div>
+  const isOut=o.kind==='out',isNote=o.kind==='note';
+  return`<div class="vch" style="position:relative">${o.void?`<div class="vstamp">ملغى</div>`:''}<div class="vt"><div><h1>${isNote?'إشعار خصم':isOut?'سند صرف':'سند قبض'}</h1><div class="mut">${esc(D.settings.owner||'أملاكي')}</div></div>
   <div class="no ${isOut?'r':''}">رقم: ${o.no||'—'}</div><div><b>التاريخ:</b> ${fmtDate(o.date)}</div></div>
-  <div class="vl"><span>${isOut?'صرفنا إلى السيد/ة':'استلمنا من السيد/ة'}</span><b>${esc(o.party||'—')}</b></div>
+  <div class="vl"><span>${isNote?'بحق المستأجر/ة':isOut?'صرفنا إلى السيد/ة':'استلمنا من السيد/ة'}</span><b>${esc(o.party||'—')}</b></div>
   <div class="vl"><span>مبلغاً وقدره</span><b><span class="vam">${money(o.amount)}</span></b></div>
   <div class="vl"><span>كتابةً</span><b>${tafqeet(o.amount)}</b></div>
   <div class="vl"><span>وذلك عن</span><b>${esc(o.about||'')}</b></div>
@@ -1363,9 +1368,9 @@ function rcptWa(id,pid){
 }
 
 /* ========== الصندوق: الإيرادات والمصروفات ========== */
-const CASH_IN=['تأمين / عربون','بيع / تعويض','أخرى'];
+const CASH_IN=['عربون','بيع / تعويض','أخرى'];
 const CASH_OUT=['صيانة وإصلاح','كهرباء وماء','نظافة وحراسة','رواتب','عمولة مكتب','ضرائب ورسوم','محامي وقضايا','سحب المالك','أخرى'];
-const CASH_IC={'إيجار':'🏠','مسقفات ومعارف':'🏛️','صيانة وإصلاح':'🔧','كهرباء وماء':'💡','نظافة وحراسة':'🧹','رواتب':'👷','عمولة مكتب':'🤝','ضرائب ورسوم':'🧾','محامي وقضايا':'⚖️','سحب المالك':'👤','تأمين / عربون':'🔐','بيع / تعويض':'💼','أخرى':'📌'};
+const CASH_IC={'تأمين مستلم (أمانة)':'🔐','رد تأمين':'↩️','تحويل من الأمانات':'🔁','خصم من التأمين (أضرار)':'🛠️','عربون':'🔐','إيجار':'🏠','مسقفات ومعارف':'🏛️','صيانة وإصلاح':'🔧','كهرباء وماء':'💡','نظافة وحراسة':'🧹','رواتب':'👷','عمولة مكتب':'🤝','ضرائب ورسوم':'🧾','محامي وقضايا':'⚖️','سحب المالك':'👤','تأمين / عربون':'🔐','بيع / تعويض':'💼','أخرى':'📌'};
 let cashPer='m';
 function catsOf(k){const c=(D.settings.cats||{})[k]||[];const base=k==='out'?CASH_OUT:CASH_IN;return[...base.filter(x=>x!=='أخرى'),...c,'أخرى']}
 function catAdd(k,n){n=(n||'').trim();if(!n)return'';D.settings.cats=D.settings.cats||{in:[],out:[]};const L=D.settings.cats[k]=D.settings.cats[k]||[];if(!catsOf(k).includes(n))L.push(n);return n}
@@ -1385,6 +1390,12 @@ function cashMoves(f,to){
   D.inst.filter(i=>C(i.cid)).forEach(i=>{const c=C(i.cid),t=T(c.tid),p=P(c.pid);
     live(i.pays).forEach(y=>L.push({src:'inst',id:i.id,pay:y.id,kind:'in',date:y.date,amount:+y.amt||0,cat:'إيجار',no:y.rno,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c.uid),method:y.method}))});
   D.props.forEach(p=>(p.taxes||[]).filter(r=>r.paid).forEach(r=>L.push({src:'tax',pid:p.id,kind:'out',date:r.paidDate,amount:(+r.masq||0)+(+r.maaref||0),cat:'مسقفات ومعارف',desc:p.name+' — عام '+r.year+(r.receipt?' (إيصال '+r.receipt+')':'')})));
+  D.contracts.forEach(c=>{const d=c.dep;if(!d||d.void)return;const t=T(c.tid),p=P(c.pid),ds=(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c.uid);
+    L.push({src:'dep',cid:c.id,lia:true,kind:'in',date:d.date,amount:+d.amt||0,cat:'تأمين مستلم (أمانة)',no:'ت-'+d.no,desc:ds,method:d.method,pid:c.pid});
+    live(d.moves).forEach(m=>{const nn=(m.type==='refund'?'تر-':'تخ-')+m.no;
+      if(m.type==='refund')L.push({src:'dep',cid:c.id,mid:m.id,lia:true,kind:'out',date:m.date,amount:+m.amt||0,cat:'رد تأمين',no:nn,desc:ds+(m.reason?' — '+m.reason:''),method:m.method,pid:c.pid});
+      else{L.push({src:'dep',cid:c.id,mid:m.id,lia:true,kind:'out',date:m.date,amount:+m.amt||0,cat:'تحويل من الأمانات',no:nn,desc:ds+' — '+(m.type==='rent'?'خصم مقابل أجرة متأخرة':m.reason),pid:c.pid});
+        if(m.type==='damage')L.push({src:'dep',cid:c.id,mid:m.id,kind:'in',date:m.date,amount:+m.amt||0,cat:'خصم من التأمين (أضرار)',no:nn,desc:ds+' — '+m.reason,pid:c.pid})}})});
   live(D.cash).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',id:x.id,imgs:(x.imgs||[]).length,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
   return L.filter(x=>x.date&&x.date>=f&&x.date<=to).sort((a,b)=>b.date.localeCompare(a.date)||(b.no||0)-(a.no||0));
 }
@@ -1395,16 +1406,18 @@ function voidList(f,to){const V=[];
 function repVouchers(f,to){
   f=f||'0000-01-01';to=to||'9999-12-31';const R=[];
   D.inst.forEach(i=>{const c=C(i.cid),t=c&&T(c.tid),p=c&&P(c.pid);(i.pays||[]).forEach(y=>R.push({s:'r',n:+y.rno||0,no:y.rno,type:'سند قبض (إيجار)',date:y.date,amt:y.amt,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c&&c.uid),v:y.void}))});
+  D.contracts.forEach(c=>{const d=c.dep;if(!d)return;const t=T(c.tid),nm=t?t.name:'';R.push({s:'d',n:+d.no||0,no:'ت-'+d.no,type:'سند قبض تأمين',date:d.date,amt:d.amt,desc:nm,v:d.void});
+    (d.moves||[]).forEach(m=>R.push({s:m.type==='refund'?'dr':'dd',n:+m.no||0,no:(m.type==='refund'?'تر-':'تخ-')+m.no,type:m.type==='refund'?'سند رد تأمين':'إشعار خصم من التأمين',date:m.date,amt:m.amt,desc:nm+(m.reason?' — '+m.reason:''),v:m.void}))});
   (D.cash||[]).forEach(x=>R.push({s:x.kind==='out'?'x':'k',n:+x.no||0,no:(x.kind==='out'?'ص-':'ق-')+x.no,type:x.kind==='out'?'سند صرف':'سند قبض (أخرى)',date:x.date,amt:x.amount,desc:[x.cat,x.party].filter(Boolean).join(' — '),v:x.void}));
   const L=R.filter(x=>x.date>=f&&x.date<=to).sort((a,b)=>a.s.localeCompare(b.s)||(!!a.n-!!b.n)||a.n-b.n||(a.date||'').localeCompare(b.date||''));
-  const gaps=[];['r','k','x'].forEach(k=>{const ns=R.filter(x=>x.s===k&&x.n).map(x=>x.n).sort((a,b)=>a-b);for(let j=1;j<ns.length;j++)for(let m=ns[j-1]+1;m<ns[j];m++)gaps.push((k==='x'?'ص-':k==='k'?'ق-':'')+m)});
+  const PF={x:'ص-',k:'ق-',d:'ت-',dr:'تر-',dd:'تخ-',r:''};const gaps=[];['r','k','x','d','dr','dd'].forEach(k=>{const ns=R.filter(x=>x.s===k&&x.n).map(x=>x.n).sort((a,b)=>a-b);for(let j=1;j<ns.length;j++)for(let m=ns[j-1]+1;m<ns[j];m++)gaps.push(PF[k]+m)});
   const rows=L.map(x=>tr([x.no||'<span class="mut">قبل الترقيم</span>',esc(x.type),fmtDate(x.date),esc(x.desc),x.v?`<s>${money(x.amt)}</s>`:money(x.amt),x.v?`<b class="red">ملغى</b> — ${esc(x.v.reason)}`:'ساري'],x.v?'late':''));
   openRep(rHead('سجل السندات',f.startsWith('0000')?'كل الفترات':`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
     rBoxes([['عدد السندات',L.length],['السارية',L.filter(x=>!x.v).length,'g'],['الملغاة',L.filter(x=>x.v).length,'r'],['أرقام مفقودة',gaps.length,gaps.length?'r':'g']])+
     (gaps.length?`<p class="red"><b>⚠️ أرقام غير موجودة في التسلسل:</b> ${gaps.slice(0,60).join('، ')}</p>`:'<p>✅ التسلسل كامل بدون فجوات.</p>')+(L.some(x=>!x.n)?'<p class="mut">«قبل الترقيم»: دفعات سُجّلت قبل إضافة ترقيم السندات للتطبيق.</p>':'')+
     tbl(['رقم السند','النوع','التاريخ','البيان','المبلغ','الحالة'],rows));
 }
-function cashTot(L){const i=sum(L.filter(x=>x.kind==='in'),x=>x.amount),o=sum(L.filter(x=>x.kind==='out'),x=>x.amount);return{i,o,b:i-o}}
+function cashTot(L){const R=L.filter(x=>!x.lia),H=L.filter(x=>x.lia);const i=sum(R.filter(x=>x.kind==='in'),x=>x.amount),o=sum(R.filter(x=>x.kind==='out'),x=>x.amount),h=sum(H.filter(x=>x.kind==='in'),x=>x.amount)-sum(H.filter(x=>x.kind==='out'),x=>x.amount);return{i,o,b:i-o,h,c:i-o+h}}
 function cashSheet(){
   ctx=()=>cashSheet();const[f,to]=cashRange(cashPer),L=cashMoves(f,to),T0=cashTot(L),all=cashTot(cashMoves('0000-01-01','9999-12-31'));
   const P0={m:'هذا الشهر',y:'هذه السنة',a:'الكل'};
@@ -1412,7 +1425,8 @@ function cashSheet(){
     <b class="amt ${x.kind}">${x.kind==='in'?'+':'−'} ${money(x.amount)}</b></div>
     ${x.src==='inst'?`<div class="btns"><button class="btn b-l" onclick="rcpt('${x.id}','${x.pay}')">🧾 سند القبض</button></div>`:''}
     ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-l" onclick="cashFiles('${x.id}')">📎 ${x.imgs?'الفاتورة':'إرفاق'}</button><button class="btn b-r" onclick="voidForm('cash','${x.id}')">🚫 إلغاء</button></div>`:''}</div>`;
-  openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.b<0?'out':'in'}">${money(all.b)}</b></div></div>
+  openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.c<0?'out':'in'}">${money(all.c)}</b></div>
+  ${all.h?`<div class="row mt"><span class="mut">منها 🔐 تأمينات محتجزة (أمانة للمستأجرين — ليست ربحاً)</span><b>${money(all.h)}</b></div><div class="row"><span class="mut">صافي ما يخصّك</span><b>${money(all.b)}</b></div>`:''}</div>
   <div class="btns"><button class="btn b-g big" onclick="cashForm('in')">➕ إيراد</button><button class="btn b-r big" onclick="cashForm('out')">➖ مصروف</button></div>
   <div class="chips">${Object.keys(P0).map(k=>`<button class="chip ${k===cashPer?'on':''}" onclick="cashPer='${k}';cashSheet()">${P0[k]}</button>`).join('')}</div>
   <div class="stats"><div class="stat"><span>⬆️ الإيرادات</span><b>${money(T0.i)}</b></div><div class="stat red"><span>⬇️ المصروفات</span><b>${money(T0.o)}</b></div><div class="stat gold" style="grid-column:1/-1"><span>📊 الصافي ${P0[cashPer]||''}</span><b>${money(T0.b)}</b></div></div>
@@ -1468,16 +1482,85 @@ function cashVch(id){const x=D.cash.find(c=>c.id===id);if(!x)return;const p=x.pi
   vchOpen({imgs:x.imgs,void:x.void,kind:x.kind,no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,party:x.party,amount:x.amount,about:x.cat+(p?' — '+p.name:'')+(x.note?' — '+x.note:''),method:x.method},false)}
 function repCash(){
   const f=val('k_from')||'0000-01-01',to=val('k_to')||'9999-12-31';
-  const prev=cashTot(cashMoves('0000-01-01',addDays(f,-1))).b,L=cashMoves(f,to).reverse(),T0=cashTot(L);
+  const prev=cashTot(cashMoves('0000-01-01',addDays(f,-1))).c,L=cashMoves(f,to).reverse(),T0=cashTot(L);
   let bal=prev;const byC={};
   const rows=L.map(x=>{bal+=x.kind==='in'?x.amount:-x.amount;const k=(x.kind==='in'?'⬆️ ':'⬇️ ')+x.cat;byC[k]=(byC[k]||0)+x.amount;
-    return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.src==='cash'?(x.imgs?'✔':(x.kind==='out'?'<b class="red">✗</b>':'—')):'—',x.kind==='in'?money(x.amount):'',x.kind==='out'?`<b class="red">${money(x.amount)}</b>`:'',money(bal)])});
+    return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.src==='cash'?(x.imgs?'✔':(x.kind==='out'?'<b class="red">✗</b>':'—')):'—',x.kind==='in'?money(x.amount)+(x.lia?' 🔐':''):'',x.kind==='out'?`<b class="red">${money(x.amount)}</b>`+(x.lia?' 🔐':''):'',money(bal)])});
   openRep(rHead('كشف الصندوق: الإيرادات والمصروفات',`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
-    rBoxes([['الرصيد السابق',money(prev)],['الإيرادات',money(T0.i),'g'],['المصروفات',money(T0.o),'r'],['الصافي للفترة',money(T0.b),'o'],['الرصيد الحالي',money(prev+T0.b),'g']])+
+    rBoxes([['الرصيد السابق',money(prev)],['الإيرادات',money(T0.i),'g'],['المصروفات',money(T0.o),'r'],['الصافي للفترة',money(T0.b),'o'],['حركة التأمينات (أمانات)',money(T0.h)],['الرصيد الحالي',money(prev+T0.c),'g']])+
     `<h2>حسب البند</h2>`+tbl(['البند','المبلغ'],Object.entries(byC).map(([k,v])=>tr([esc(k),money(v)])))+
-    `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','مستند','إيراد','مصروف','الرصيد'],rows,['المجموع','','','','',money(T0.i),money(T0.o),money(prev+T0.b)])+(L.some(x=>x.src==='cash'&&x.kind==='out'&&!x.imgs)?'<p class="red">✗ = مصروف بدون مستند مرفق</p>':''));
+    `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','مستند','إيراد','مصروف','الرصيد'],rows,['المجموع','','','','',money(T0.i),money(T0.o),money(prev+T0.c)])+'<p class="mut">🔐 = حركة تأمين (أمانة): تدخل في رصيد الصندوق النقدي لكنها ليست إيراداً ولا مصروفاً.</p>'+(L.some(x=>x.src==='cash'&&x.kind==='out'&&!x.imgs)?'<p class="red">✗ = مصروف بدون مستند مرفق</p>':''));
 }
 
+
+
+/* ========== التأمينات (الكفالة) ========== */
+function depBal(c){const d=c&&c.dep;if(!d||d.void)return 0;return Math.round(((+d.amt||0)-sum(live(d.moves),m=>m.amt))*1000)/1000}
+function depBlock(c){
+  const d=c.dep&&!c.dep.void?c.dep:null;
+  if(!d)return`<div class="sec">🔐 التأمين (الكفالة)</div><div class="card"><p class="mut">لم يُسجَّل تأمين لهذا العقد. التأمين أمانة تُرَدّ للمستأجر ولا يُحسب ربحاً.</p>
+    <button class="btn b-g full" onclick="depForm('${c.id}')">➕ تسجيل تأمين مستلم</button>${c.dep&&c.dep.void?`<p class="mut mt">🚫 يوجد سند تأمين ملغى ت-${c.dep.no} <button class="btn b-l" onclick="depVch('${c.id}')">عرض</button></p>`:''}</div>`;
+  const bal=depBal(c),mv=d.moves||[];
+  return`<div class="sec">🔐 التأمين (الكفالة)</div><div class="card"><div class="stats">
+    <div class="stat"><span>المستلم</span><b>${money(d.amt)}</b><span>${fmtDate(d.date)}</span></div>
+    <div class="stat gold"><span>المحتجز الآن</span><b>${money(bal)}</b><span>أمانة</span></div></div>
+    ${mv.map(m=>`<div class="payl ${m.void?'void':''}"><div class="row"><span>${m.void?'🚫 ':''}${m.type==='refund'?'↩️ رد للمستأجر':m.type==='rent'?'🏠 خصم مقابل أجرة':'🛠️ خصم أضرار'} • ${fmtDate(m.date)}${m.void?' — ملغى':''}</span><b>${m.void?'<s>'+money(m.amt)+'</s>':money(m.amt)}</b></div>${m.reason?`<p class="mut">${esc(m.reason)}</p>`:''}
+      <div class="btns"><button class="btn b-l" onclick="depMoveVch('${c.id}','${m.id}')">🧾 السند</button>${m.void?'':`<button class="btn b-l" onclick="voidForm('depm','${c.id}','${m.id}')">🚫 إلغاء</button>`}</div></div>`).join('')}
+    <div class="btns"><button class="btn b-g" onclick="depVch('${c.id}')">🧾 سند استلام التأمين</button></div>
+    ${bal>0?`<div class="btns"><button class="btn b-w" onclick="depMoveForm('${c.id}','refund')">↩️ رد التأمين</button><button class="btn b-l" onclick="depMoveForm('${c.id}','rent')">🏠 خصم مقابل أجرة</button></div>
+    <div class="btns"><button class="btn b-l" onclick="depMoveForm('${c.id}','damage')">🛠️ خصم أضرار</button></div>`:''}
+    ${!mv.some(m=>!m.void)?`<div class="btns"><button class="btn b-r" onclick="voidForm('dep','${c.id}')">🚫 إلغاء سند التأمين</button></div>`:''}</div>`;
+}
+function depForm(cid){
+  openSheet('🔐 تسجيل تأمين مستلم',`<div class="card soft"><p>التأمين (الكفالة) مبلغ يدفعه المستأجر ضماناً، ويُرَدّ له عند الإخلاء أو يُخصم منه. يدخل الصندوق كـ<b>أمانة</b> لا كإيراد.</p></div>
+  <label>مبلغ التأمين (د.أ)</label><input id="d_a" type="number" inputmode="decimal">
+  <label>تاريخ الاستلام</label><input id="d_d" type="date" value="${today()}">
+  <label>طريقة الدفع</label><select id="d_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية','كمبيالة'])}</select>
+  <label>ملاحظة</label><input id="d_n" placeholder="مثال: شيك رقم 123 بنك الإسكان">
+  <button class="btn b-g full big" onclick="depSave('${cid}')">💾 حفظ وإصدار سند استلام التأمين</button>`);
+}
+function depSave(cid){const a=+val('d_a');if(!(a>0)){toast('اكتب مبلغ التأمين');return}
+  const c=C(cid);c.dep={amt:a,date:val('d_d')||today(),method:val('d_m'),note:val('d_n'),no:nextNo('d'),moves:[]};
+  closeSheet();after('تم تسجيل التأمين ✅ — سند ت-'+c.dep.no);depVch(cid)}
+function depMoveForm(cid,type){
+  const c=C(cid),bal=depBal(c),late=D.inst.filter(i=>i.cid===cid&&!i.paid&&i.due<=today()),lt=sum(late,rem);
+  const T0={refund:'↩️ رد التأمين للمستأجر',rent:'🏠 خصم من التأمين مقابل أجرة',damage:'🛠️ خصم من التأمين (أضرار / تصليحات)'}[type];
+  const def=type==='rent'?Math.min(bal,lt):type==='refund'?bal:'';
+  if(type==='rent'&&!lt){toast('لا توجد أجرة مستحقة على هذا العقد');return}
+  openSheet(T0,`<div class="card soft"><div class="kv"><span>التأمين المحتجز</span><b>${money(bal)}</b></div>${type==='rent'?`<div class="kv"><span>الأجرة المستحقة غير المدفوعة</span><b class="red">${money(lt)}</b></div><p class="mut">يُوزَّع الخصم على الدفعات المستحقة من الأقدم، ويصدر لكل منها سند قبض بطريقة «خصم من التأمين».</p>`:''}
+  ${type==='damage'?'<p class="mut">مبلغ الأضرار المخصوم يتحول من أمانة إلى إيراد لك (تعويض)، ويظهر في الصندوق.</p>':''}</div>
+  <label>المبلغ (د.أ)</label><input id="dm_a" type="number" inputmode="decimal" value="${def}">
+  <label>التاريخ</label><input id="dm_d" type="date" value="${today()}">
+  ${type==='refund'?`<label>طريقة الرد</label><select id="dm_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'])}</select>`:''}
+  <label>${type==='damage'?'وصف الأضرار (إجباري)':'ملاحظة'}</label><input id="dm_r">
+  <button class="btn b-g full big" onclick="depMoveSave('${cid}','${type}')">💾 حفظ وإصدار السند</button>`);
+}
+function depMoveSave(cid,type){
+  const c=C(cid),bal=depBal(c),a=+val('dm_a'),r=val('dm_r').trim();
+  if(!(a>0)){toast('اكتب المبلغ');return}if(a>bal+0.0005){toast('المبلغ أكبر من التأمين المحتجز ('+money(bal)+')');return}
+  if(type==='damage'&&r.length<3){toast('اكتب وصف الأضرار');return}
+  const m={id:uid(),type,amt:a,date:val('dm_d')||today(),reason:r,method:type==='refund'?val('dm_m'):'',no:nextNo(type==='refund'?'dr':'dd')};
+  if(type==='rent'){let left=a;m.pays=[];
+    const L=D.inst.filter(i=>i.cid===cid&&!i.paid&&i.due<=today()).sort((x,y)=>x.due.localeCompare(y.due));
+    const tot=sum(L,rem);if(a>tot+0.0005){toast('المبلغ أكبر من الأجرة المستحقة ('+money(tot)+')');return}
+    for(const i of L){if(left<=0.0005)break;const x=Math.min(left,rem(i));const y={id:uid(),amt:Math.round(x*1000)/1000,date:m.date,method:'خصم من التأمين',note:'خصم من التأمين — إشعار تخ-'+m.no,rno:nextNo('r')};
+      i.pays=i.pays||[];i.pays.push(y);syncInst(i);m.pays.push([i.id,y.id]);left-=x}}
+  c.dep.moves=c.dep.moves||[];c.dep.moves.push(m);
+  closeSheet();after(type==='refund'?'تم رد التأمين ✅':'تم الخصم من التأمين ✅');depMoveVch(cid,m.id);
+}
+function depVch(cid){const c=C(cid),d=c.dep,t=T(c.tid),p=P(c.pid);
+  vchOpen({void:d.void,kind:'in',no:'ت-'+d.no,date:d.date,party:t?t.name:'',amount:d.amt,about:`تأمين (كفالة) مسترد عن ${p?p.name:''} - ${unitName(p,c.uid)} — أمانة تُرَدّ عند الإخلاء حسب شروط العقد`,method:d.method,note:d.note},true)}
+function depMoveVch(cid,mid){const c=C(cid),m=(c.dep.moves||[]).find(x=>x.id===mid),t=T(c.tid),p=P(c.pid),u=(p?p.name:'')+' - '+unitName(p,c.uid);
+  const ab=m.type==='refund'?`رد تأمين (كفالة) عن ${u}`:m.type==='rent'?`خصم من التأمين مقابل أجرة مستحقة عن ${u}`:`خصم من التأمين مقابل أضرار في ${u}: ${m.reason}`;
+  vchOpen({void:m.void,kind:m.type==='refund'?'out':'note',no:(m.type==='refund'?'تر-':'تخ-')+m.no,date:m.date,party:t?t.name:'',amount:m.amt,about:ab+`. الباقي من التأمين: ${money(depBal(c))}`,method:m.method||'خصم من التأمين',note:m.type!=='damage'?m.reason:''},m.type!=='rent')}
+function repDeps(){
+  const L=D.contracts.filter(c=>c.dep&&!c.dep.void);
+  const rows=L.map(c=>{const t=T(c.tid),p=P(c.pid),mv=live(c.dep.moves);return tr([esc(t?t.name:''),esc((p?p.name:'')+' - '+unitName(p,c.uid)),fmtDate(c.dep.date),money(c.dep.amt),money(sum(mv.filter(m=>m.type!=='refund'),m=>m.amt)),money(sum(mv.filter(m=>m.type==='refund'),m=>m.amt)),`<b>${money(depBal(c))}</b>`,c.end<today()?'منتهي':'ساري'],c.end<today()&&depBal(c)>0?'late':'')});
+  const tot=sum(L,depBal);
+  openRep(rHead('تقرير التأمينات (الكفالات)')+rBoxes([['عدد التأمينات',L.length],['إجمالي المستلم',money(sum(L,c=>c.dep.amt))],['المحتجز حالياً (التزام)',money(tot),'o']])+
+    tbl(['المستأجر','العقار / الوحدة','تاريخ الاستلام','المستلم','المخصوم','المردود','المحتجز','العقد'],rows,['المجموع','','','',money(sum(L,c=>sum(live(c.dep.moves).filter(m=>m.type!=='refund'),m=>m.amt))),money(sum(L,c=>sum(live(c.dep.moves).filter(m=>m.type==='refund'),m=>m.amt))),money(tot),''])+
+    '<p class="mut">الصفوف المظللة: عقود منتهية ما زال لها تأمين محتجز — يجب ردّه أو تسويته.</p>');
+}
 
 /* ========== الشركاء ========== */
 const pctSum=p=>sum(p.partners||[],x=>x.pct);
@@ -1508,7 +1591,7 @@ function allPartners(){return[...new Set(D.props.flatMap(p=>(p.partners||[]).map
 function propMoney(pid,f,to){
   const L=cashMoves(f,to).filter(x=>{if(x.src==='inst'){const i=I(x.id),c=i&&C(i.cid);return c&&c.pid===pid}
     if(x.src==='cash'){const c=(D.cash||[]).find(y=>y.id===x.id);return c&&c.pid===pid}
-    if(x.src==='tax')return x.pid===pid;return false});
+    if(x.src==='tax'||x.src==='dep')return x.pid===pid;return false});
   return{L,...cashTot(L)};
 }
 function repPartners(pid,f,to){
@@ -1574,6 +1657,7 @@ function taxTbl(list){
 /* ========== دليل الاستخدام ========== */
 const GUIDE_AR=[
 ['🧾 سند القبض','بعد تسجيل أي دفعة يأخذ سند قبض برقم متسلسل. اضغط «سند قبض» تحت الدفعة المدفوعة لطباعته بنسختين (للمالك وللمستأجر) مع المبلغ كتابةً، أو «إرسال السند» ليصل للمستأجر على الواتساب.'],
+['🔐 التأمين (الكفالة)','داخل الوحدة المؤجرة قسم «التأمين»: سجّل مبلغ التأمين المستلم فيصدر له سند. التأمين أمانة وليس ربحاً، فيظهر في الصندوق منفصلاً. عند الإخلاء: «رد التأمين» بسند صرف، أو «خصم مقابل أجرة» فيسدد الدفعات المتأخرة، أو «خصم أضرار» فيتحول المبلغ إلى إيراد. تقرير «التأمينات المحتجزة» يعرض كل تأمين وما بقي منه.'],
 ['📎 فواتير المصاريف','عند إضافة مصروف في الصندوق اضغط «📷 إرفاق فاتورة» وصوّر الفاتورة أو ارفع PDF. المصروف بدون مستند يظهر بعلامة «بدون فاتورة» وبـ ✗ في كشف الصندوق. يمكنك إرفاق المستند لاحقاً من زر «📎 إرفاق» تحت الحركة.'],
 ['🚫 إلغاء السندات','السند لا يُحذف أبداً. إذا أخطأت اضغط «إلغاء السند» واكتب السبب: يبقى السند برقمه مختوماً «ملغى» ولا يدخل في أي مجموع، ثم سجّل سنداً جديداً صحيحاً. من التقارير «سجل السندات» يعرض كل الأرقام بالتسلسل ويُنبّهك إلى أي رقم مفقود.'],
 ['🤝 الشركاء','في صفحة العقارات اضغط «🤝 الشركاء» تحت العقار، وأضف اسم كل شريك ونسبته (المجموع 100%). من نفس الصفحة اطبع «كشف توزيع الشركاء» لفترة: التحصيل والمدفوعات والصافي وحصة كل شريك. ومن التقارير «كشف حساب شريك» لكل عقاراته معاً.'],
