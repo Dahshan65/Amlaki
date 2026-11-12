@@ -138,6 +138,22 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--g)}
 #repBody .red{color:var(--red)}
 #repBody .c{text-align:center;color:#888}
 .sign{display:flex;justify-content:space-between;margin-top:50px;font-weight:700}
+.vch{border:2px solid var(--g);border-radius:12px;padding:14px 16px;margin:6px 0 10px;page-break-inside:avoid}
+.vch .vt{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--g);padding-bottom:8px;margin-bottom:10px;gap:8px}
+.vch .vt h1{font-size:22px;color:var(--g);margin:0}
+.vch .vt .no{font-size:14px;font-weight:800;border:1.5px solid var(--g);border-radius:8px;padding:4px 10px}
+.vch .vt .no.r{color:var(--red);border-color:var(--red)}
+.vch .vl{display:flex;gap:8px;padding:7px 0;border-bottom:1px dotted #9aa8a3;font-size:14px}
+.vch .vl span{min-width:120px;color:#444}
+.vch .vl b{flex:1}
+.vch .vam{display:inline-block;border:2px solid var(--g);border-radius:8px;padding:2px 12px;font-size:17px}
+.vch .vcopy{font-size:11px;color:#777;text-align:center;margin-top:6px}
+.vcut{border-top:2px dashed #999;margin:14px 0;text-align:center;font-size:11px;color:#999}
+.cmv{display:flex;align-items:center;gap:10px}
+.cmv .ci{font-size:1.5rem}
+.cmv .cx{flex:1;min-width:0}
+.amt.in{color:var(--g)}.amt.out{color:var(--red)}
+.payl{background:#f2f8f6;border:1px solid #d6e7e0;border-radius:12px;padding:8px 10px;margin-top:8px}
 @media print{
   body{padding:0;background:#fff}
   body>*:not(#rep){display:none!important}
@@ -233,7 +249,7 @@ button.stat{width:100%;text-align:start;font-family:inherit;color:inherit;border
 <script>
 /* ========== البيانات ========== */
 const KEY='amlaki_v1';
-const EMPTY=()=>({props:[],tenants:[],contracts:[],inst:[],legal:[],settings:{fs:''}});
+const EMPTY=()=>({props:[],tenants:[],contracts:[],inst:[],legal:[],cash:[],settings:{fs:''}});
 let D=load();
 let tab='home', payFilter='late', ctx=null;
 const UTYPES=['شقة','محل تجاري','مكتب','مستودع / مخزن','معرض','فيلا','منزل','غرفة','أرض','أخرى'];
@@ -241,7 +257,7 @@ const ICON={'شقة':'🏠','محل تجاري':'🏪','مكتب':'💼','مست
 const ic=t=>ICON[t]||'🔑';
 
 function load(){try{const x=JSON.parse(localStorage.getItem(KEY));return x&&x.props?fix(x):EMPTY()}catch(e){return EMPTY()}}
-function fix(x){x.legal=x.legal||[];x.settings=x.settings||{fs:''};x.props.forEach(p=>p.units.forEach(u=>{u.type=u.type||'أخرى'}));return x}
+function fix(x){x.legal=x.legal||[];x.cash=x.cash||[];(x.inst||[]).forEach(i=>{if(!i.pays){i.pays=i.paid?[{id:Math.random().toString(36).slice(2,9),amt:+(i.paidAmount??i.amount)||0,date:i.paidDate||i.due,method:i.payMethod||'',note:i.note||'',rno:i.rno}]:[]}});x.settings=x.settings||{fs:''};x.props.forEach(p=>p.units.forEach(u=>{u.type=u.type||'أخرى'}));return x}
 function save(){localStorage.setItem(KEY,JSON.stringify(D))}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const P=id=>D.props.find(x=>x.id===id);
@@ -279,10 +295,17 @@ let tt;function toast(m){const e=document.getElementById('toast');e.textContent=
 function emptyBox(ic,txt,btn){return`<div class="card empty"><span class="ic">${ic}</span><p>${txt}</p>${btn||''}</div>`}
 
 /* ========== حالة الدفعة ========== */
+const paidOf=i=>sum(i.pays||[],p=>p.amt);
+const rem=i=>Math.max(0,Math.round(((+i.amount||0)-paidOf(i))*1000)/1000);
+function syncInst(i){i.pays=i.pays||[];const pa=paidOf(i),last=[...i.pays].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).pop();
+  i.paidAmount=pa;i.paid=i.pays.length>0&&rem(i)<=0.0005;i.paidDate=last?last.date:undefined;i.payMethod=last?last.method:undefined;i.rno=last?last.rno:undefined;
+  if(!i.pays.length){delete i.paidAmount;delete i.paidDate;delete i.payMethod;delete i.rno}}
+function allPays(f,t){const L=[];D.inst.forEach(i=>{const c=C(i.cid);if(!c)return;(i.pays||[]).forEach(p=>{if(p.date>=f&&p.date<=t)L.push({i,c,p})})});return L}
 function st(i){if(i.paid)return'paid';const d=days(today(),i.due);if(d<0)return'late';if(d<=7)return'soon';return'up'}
 function tagOf(i){
   if(i.paid)return`<span class="tag t-g">مدفوعة ✔</span>`;
   const d=days(today(),i.due);
+  if(paidOf(i)>0)return`<span class="tag ${d<0?'t-red':'t-org'}">جزئي — باقي ${money(rem(i))}${d<0?' • متأخرة '+(-d)+' يوم':''}</span>`;
   if(d<0)return`<span class="tag t-red">متأخرة ${-d} يوم</span>`;
   if(d===0)return`<span class="tag t-org">مستحقة اليوم</span>`;
   if(d<=7)return`<span class="tag t-org">بعد ${d} أيام</span>`;
@@ -293,16 +316,17 @@ function instCard(i){
   const t=T(c.tid),p=P(c.pid),s=st(i);
   const chk=i.method==='شيك'?` • 🧾 شيك${i.checkNo?' رقم '+esc(i.checkNo):''}${i.bank?' - '+esc(i.bank):''}`:'';
   let btns;
+  const pl=(i.pays||[]).map(p=>`<div class="payl"><div class="row"><span>🧾 <b>${p.rno?'سند '+p.rno:'دفعة'}</b> • ${fmtDate(p.date)} • ${esc(p.method||'')}</span><b class="amt in">${money(p.amt)}</b></div>
+    <div class="btns"><button class="btn b-g" onclick="rcpt('${i.id}','${p.id}')">🧾 السند</button>${t&&t.phone?`<button class="btn b-w" onclick="rcptWa('${i.id}','${p.id}')">💬 إرسال</button>`:''}<button class="btn b-l" onclick="unpay('${i.id}','${p.id}')">↩️ إلغاء</button></div></div>`).join('');
   if(i.paid){
-    btns=`<p class="mut mt">دُفعت ${money(i.paidAmount)} بتاريخ ${fmtDate(i.paidDate)} (${esc(i.payMethod||'')})</p>
-    <div class="btns"><button class="btn b-l" onclick="unpay('${i.id}')">↩️ إلغاء تسجيل الدفع</button></div>`;
+    btns=pl;
   }else{
-    btns=`<div class="btns"><button class="btn b-g big" onclick="payForm('${i.id}')">✅ تم الدفع</button>
+    btns=pl+`<div class="btns"><button class="btn b-g big" onclick="payForm('${i.id}')">${paidOf(i)>0?'➕ تسجيل دفعة أخرى':'✅ تم الدفع'}</button>
     ${t&&t.phone?`<button class="btn b-w" onclick="remind('${i.id}')">💬 تذكير</button><a class="btn b-l" href="tel:${esc(t.phone)}">📞 اتصال</a>`:''}</div>
     <div class="btns"><button class="btn b-l" onclick="instEdit('${i.id}')">✏️ تعديل الدفعة</button></div>`;
   }
   return`<div class="card ${s}">
-    <div class="row"><div><div class="nm">${esc(t?t.name:'—')}</div><div class="mut">${esc(p?p.name:'')} • ${esc(unitName(p,c.uid))}</div></div><div style="text-align:end"><div class="amt">${money(i.amount)}</div>${i.svc?`<div class="mut" style="font-size:.78rem">إيجار ${money(i.amount-i.svc)} + خدمات ${money(i.svc)}</div>`:''}</div></div>
+    <div class="row"><div><div class="nm">${esc(t?t.name:'—')}</div><div class="mut">${esc(p?p.name:'')} • ${esc(unitName(p,c.uid))}</div></div><div style="text-align:end"><div class="amt">${money(i.amount)}</div>${!i.paid&&paidOf(i)>0?`<div class="mut" style="font-size:.78rem">دُفع ${money(paidOf(i))} • الباقي <b>${money(rem(i))}</b></div>`:''}${i.svc?`<div class="mut" style="font-size:.78rem">إيجار ${money(i.amount-i.svc)} + خدمات ${money(i.svc)}</div>`:''}</div></div>
     <div class="row mt"><div class="mut">📅 ${fmtDate(i.due)}${chk}</div>${tagOf(i)}</div>${btns}</div>`;
 }
 
@@ -316,7 +340,8 @@ function homeData(){
   return{td,
     late:D.inst.filter(i=>!i.paid&&i.due<td).sort((a,b)=>a.due.localeCompare(b.due)),
     month:D.inst.filter(i=>!i.paid&&i.due>=td&&i.due.slice(0,7)===ym).sort((a,b)=>a.due.localeCompare(b.due)),
-    coll:D.inst.filter(i=>i.paid&&(i.paidDate||'').slice(0,7)===ym).sort((a,b)=>(b.paidDate||'').localeCompare(a.paidDate||'')),
+    coll:D.inst.filter(i=>(i.pays||[]).some(p=>(p.date||'').slice(0,7)===ym)).sort((a,b)=>(b.paidDate||'').localeCompare(a.paidDate||'')),
+    collAmt:sum(allPays(td.slice(0,8)+'01',td.slice(0,8)+'31'),x=>x.p.amt),
     att:D.inst.filter(i=>!i.paid&&days(td,i.due)<=7).sort((a,b)=>a.due.localeCompare(b.due)),
     utax:D.props.filter(p=>{const r=taxRec(p,yr());return taxDue(p,yr())>0&&!(r&&r.paid)}),
     legal:D.legal.filter(lOpen).sort((a,b)=>(a.next||'9').localeCompare(b.next||'9')),
@@ -327,9 +352,9 @@ function homeBody(){
   const allUnits=D.props.flatMap(p=>p.units),rented=allUnits.filter(u=>activeContract(u.id)).length;
   const tile=(ic,t,n,fn,warn)=>`<button class="tile ${n&&warn?'warn':''}" onclick="${fn}"><span class="ic">${ic}</span><span class="tt">${t}</span><b class="cnt ${n?'':'zero'}">${n}</b></button>`;
   let h=`<div class="stats">
-    <button class="stat red" onclick="homeList('late')"><span>⚠️ المتأخر</span><b>${money(sum(H.late,i=>i.amount))}</b><span>${H.late.length} دفعة ‹</span></button>
-    <button class="stat org" onclick="homeList('month')"><span>⏳ باقي هذا الشهر</span><b>${money(sum(H.month,i=>i.amount))}</b><span>${H.month.length} دفعة ‹</span></button>
-    <button class="stat" onclick="homeList('coll')"><span>✅ حصّلت هذا الشهر</span><b>${money(sum(H.coll,i=>i.paidAmount))}</b><span>${H.coll.length} دفعة ‹</span></button>
+    <button class="stat red" onclick="homeList('late')"><span>⚠️ المتأخر</span><b>${money(sum(H.late,rem))}</b><span>${H.late.length} دفعة ‹</span></button>
+    <button class="stat org" onclick="homeList('month')"><span>⏳ باقي هذا الشهر</span><b>${money(sum(H.month,rem))}</b><span>${H.month.length} دفعة ‹</span></button>
+    <button class="stat" onclick="homeList('coll')"><span>✅ حصّلت هذا الشهر</span><b>${money(H.collAmt)}</b><span>${H.coll.length} دفعة ‹</span></button>
     <button class="stat gold" onclick="unitsSheet()"><span>🏢 الوحدات المؤجرة</span><b>${rented} / ${allUnits.length}</b><span>${allUnits.length-rented} فارغة ‹</span></button>
   </div>`;
   if(!D.props.length){
@@ -349,6 +374,7 @@ function homeBody(){
     <button class="act wide" onclick="propForm()"><span class="ic">🏢</span>أضف عقار</button>
     <button class="act gold" onclick="go('pay')"><span class="ic">💵</span>سجّل دفعة</button>
     <button class="act lt" onclick="tenantsSheet()"><span class="ic">👥</span>المستأجرون (${D.tenants.length})</button>
+    <button class="act wide" onclick="cashSheet()"><span class="ic">💰</span>الصندوق: الإيرادات والمصروفات</button>
     <button class="act wide lt" onclick="reportsSheet()"><span class="ic">🖨️</span>التقارير والبيانات</button>
   </div>`;
   return h;
@@ -357,7 +383,7 @@ function listHead(n,total){return`<div class="card soft"><div class="row"><b>ا�
 function homeList(kind){
   const H=homeData();ctx=()=>homeList(kind);
   const K={late:'⚠️ الدفعات المتأخرة',month:'⏳ باقي هذا الشهر',coll:'✅ حصّلت هذا الشهر',att:'🔔 تحتاج انتباهك'};
-  const L=H[kind],total=sum(L,i=>i.paid?i.paidAmount:i.amount);
+  const L=H[kind],total=kind==='coll'?H.collAmt:sum(L,i=>i.paid?i.paidAmount:rem(i));
   const sub=kind==='att'?'<p class="mut" style="margin:0 4px 10px">الدفعات المتأخرة والمستحقة خلال 7 أيام</p>':'';
   openSheet(K[kind],sub+listHead(L.length,total)+(L.length?L.map(instCard).join(''):emptyBox('👍','لا يوجد شيء هنا')));
 }
@@ -396,6 +422,7 @@ function vProps(){
     <p class="mut mt">👆 اضغط على أي وحدة لرؤية تفاصيلها كاملة</p>
     <div class="btns"><button class="btn b-l" onclick="propForm('${p.id}')">✏️ تعديل / إضافة وحدات</button></div>
     <div class="btns"><button class="btn b-l" onclick="taxSheet('${p.id}')">🏛️ المسقفات والمعارف</button></div>
+    <div class="btns"><button class="btn b-l" onclick="partnersSheet('${p.id}')">🤝 الشركاء${(p.partners||[]).length?' ('+p.partners.length+')':''}</button></div>
     <div class="btns"><button class="btn b-l" onclick="repProp('${p.id}')">🖨️ تقرير العقار</button><button class="btn b-r" onclick="delProp('${p.id}')">🗑️ حذف</button></div></div>`}).join('');
 }
 function unitChip(p,u){
@@ -509,7 +536,7 @@ function getTenant(name,phone){
 }
 function buildContract(o){
   const c={id:uid(),pid:o.pid,uid:o.uid,tid:o.tid,start:o.start,end:o.end,months:monthsBetween(o.start,o.end),freq:o.freq,amount:o.amount,method:o.method,bank:o.bank||'',imgs:o.imgs||[],svc:o.svc||0,raw:o.raw||null};
-  o.dues.forEach((d,k)=>D.inst.push({id:uid(),cid:c.id,due:d,amount:Math.round((o.amount+(o.svc||0))*1000)/1000,svc:o.svc||0,method:o.method,checkNo:(o.checks||[])[k]||'',bank:c.bank,paid:false}));
+  o.dues.forEach((d,k)=>D.inst.push({id:uid(),cid:c.id,due:d,amount:Math.round((o.amount+(o.svc||0))*1000)/1000,svc:o.svc||0,method:o.method,checkNo:(o.checks||[])[k]||'',bank:c.bank,paid:false,pays:[]}));
   D.contracts.push(c);return o.dues.length;
 }
 function saveProp(id){
@@ -564,11 +591,11 @@ function unitDetail(pid,unitId){
     ${imgsBlock(c)}
     <div class="sec">💰 وضع الدفعات</div>
     <div class="stats">
-      <div class="stat"><span>✅ المستلم</span><b>${money(sum(paid,i=>i.paidAmount))}</b><span>${paid.length} دفعة</span></div>
-      <div class="stat red"><span>⚠️ المتأخر</span><b>${money(sum(late,i=>i.amount))}</b><span>${late.length} دفعة</span></div>
-      <div class="stat org"><span>⏳ الباقي</span><b>${money(sum(rest,i=>i.amount))}</b><span>${rest.length} دفعة</span></div>
-      <div class="stat gold"><span>📅 الدفعة القادمة</span><b>${rest[0]?fmtDate(rest[0].due):'—'}</b><span>${rest[0]?money(rest[0].amount):''}</span></div></div>
-    <div class="bar"><i style="width:${total?sum(paid,i=>i.amount)/total*100:0}%"></i></div>
+      <div class="stat"><span>✅ المستلم</span><b>${money(sum(ins,paidOf))}</b><span>${paid.length} دفعة مكتملة</span></div>
+      <div class="stat red"><span>⚠️ المتأخر</span><b>${money(sum(late,rem))}</b><span>${late.length} دفعة</span></div>
+      <div class="stat org"><span>⏳ الباقي</span><b>${money(sum(rest,rem))}</b><span>${rest.length} دفعة</span></div>
+      <div class="stat gold"><span>📅 الدفعة القادمة</span><b>${rest[0]?fmtDate(rest[0].due):'—'}</b><span>${rest[0]?money(rem(rest[0])):''}</span></div></div>
+    <div class="bar"><i style="width:${total?sum(ins,paidOf)/total*100:0}%"></i></div>
     <div class="sec">📅 تواريخ الاستحقاق (${ins.length})</div>${ins.map(instCard).join('')}`;
   }else{
     h+=`<div class="card empty"><span class="ic">🔑</span><p>هذه الوحدة غير مؤجّرة حالياً</p><button class="btn b-g full big" onclick="rentForm('${pid}','${unitId}')">📝 أجّر هذه الوحدة</button></div>`;
@@ -577,7 +604,7 @@ function unitDetail(pid,unitId){
   h+=`<div class="sec">⚖️ الإجراءات القانونية (${ls.length})</div>${ls.map(legalCard).join('')}
   <button class="btn b-gold full big" onclick="legalForm('${pid}','${unitId}')">➕ إجراء قانوني (إنذار، دعوى...)</button>`;
   const old=D.contracts.filter(x=>x.uid===unitId&&x!==c);
-  if(old.length)h+=`<div class="sec">🗂️ عقود سابقة</div>`+old.map(x=>{const t=T(x.tid),lt=sum(D.inst.filter(i=>i.cid===x.id&&!i.paid),i=>i.amount);
+  if(old.length)h+=`<div class="sec">🗂️ عقود سابقة</div>`+old.map(x=>{const t=T(x.tid),lt=sum(D.inst.filter(i=>i.cid===x.id&&!i.paid),rem);
     return`<div class="card"><div class="nm">👤 ${esc(t?t.name:'—')}</div><p class="mut">من ${fmtDate(x.start)} إلى ${fmtDate(x.end)}</p>${lt?`<p><span class="tag t-red">باقي عليه ${money(lt)}</span></p>`:''}
     <div class="btns"><button class="btn b-l" onclick="contractInst('${x.id}')">📋 الدفعات</button></div></div>`}).join('');
   h+=`<button class="btn b-l full big" onclick="repUnit('${pid}','${unitId}')">🖨️ طباعة تقرير هذه الوحدة</button>`;
@@ -586,7 +613,7 @@ function unitDetail(pid,unitId){
 function endContract(cid){
   if(!confirm('إنهاء العقد اليوم وإخلاء الوحدة؟\nستُحذف الدفعات القادمة غير المستحقة، وتبقى الدفعات المتأخرة مسجّلة على المستأجر.'))return;
   const c=C(cid),td=today();c.end=td;
-  D.inst=D.inst.filter(i=>!(i.cid===cid&&!i.paid&&i.due>=td));
+  D.inst=D.inst.filter(i=>!(i.cid===cid&&!i.paid&&!paidOf(i)&&i.due>=td));
   after('تم إنهاء العقد — الوحدة الآن شاغرة');
 }
 
@@ -614,11 +641,11 @@ function saveContractEdit(cid){
   if(oT&&nn!==oT.name&&!D.tenants.some(x=>x.name===nn)&&D.contracts.filter(x=>x.tid===oT.id).length===1)oT.name=nn;else c.tid=getTenant(nn,L.tphone);
   if(L.tphone)T(c.tid).phone=L.tphone;
   Object.assign(c,{start:L.start,end:L.end,months:monthsBetween(L.start,L.end),freq:+L.freq,amount:per,svc:svcPer,method:L.method,imgs:L.imgs||[],raw:{a:L.amount,b:L.basis,s:L.svc,sb:L.svcBasis}});
-  const lastPaid=D.inst.filter(i=>i.cid===cid&&i.paid).reduce((m,i)=>i.due>m?i.due:m,'');
-  const old={};D.inst.filter(i=>i.cid===cid&&!i.paid).forEach(i=>old[i.due]=i);
-  D.inst=D.inst.filter(i=>!(i.cid===cid&&!i.paid));
+  const lastPaid=D.inst.filter(i=>i.cid===cid&&(i.paid||paidOf(i)>0)).reduce((m,i)=>i.due>m?i.due:m,'');
+  const old={};D.inst.filter(i=>i.cid===cid&&!i.paid&&!paidOf(i)).forEach(i=>old[i.due]=i);
+  D.inst=D.inst.filter(i=>!(i.cid===cid&&!i.paid&&!paidOf(i)));
   let n=0;
-  dues.filter(d=>d>lastPaid).forEach(d=>{const o=old[d]||{};D.inst.push({id:uid(),cid,due:d,amount:r3(per+svcPer),svc:svcPer,method:L.method,checkNo:o.checkNo||'',bank:o.bank||'',paid:false});n++});
+  dues.filter(d=>d>lastPaid).forEach(d=>{const o=old[d]||{};D.inst.push({id:uid(),cid,due:d,amount:r3(per+svcPer),svc:svcPer,method:L.method,checkNo:o.checkNo||'',bank:o.bank||'',paid:false,pays:[]});n++});
   after(`تم حفظ تعديلات العقد ✅ — ${n} دفعة قادمة`);
 }
 function instEdit(id){
@@ -634,7 +661,7 @@ function instEdit(id){
 }
 function saveInst(id){
   const i=I(id),a=+val('ie_a');if(!(a>0)){toast('اكتب المبلغ');return}
-  i.due=val('ie_d')||i.due;if(i.svc&&a<i.svc)i.svc=0;i.amount=a;i.method=val('ie_m');i.checkNo=val('ie_c');i.bank=val('ie_b');
+  i.due=val('ie_d')||i.due;if(i.svc&&a<i.svc)i.svc=0;i.amount=a;i.method=val('ie_m');i.checkNo=val('ie_c');i.bank=val('ie_b');syncInst(i);
   after('تم حفظ الدفعة ✅');
 }
 function delInst(id){if(!confirm('حذف هذه الدفعة؟'))return;D.inst=D.inst.filter(x=>x.id!==id);after('تم حذف الدفعة')}
@@ -671,7 +698,7 @@ function legalForm(pid,unitId,id){
   const l=id?D.legal.find(x=>x.id===id):null;
   const c=activeContract(unitId)||D.contracts.filter(x=>x.uid===unitId).sort((a,b)=>b.end.localeCompare(a.end))[0];
   const tid=l?l.tid:(c?c.tid:'');
-  const lateSum=c?sum(D.inst.filter(i=>i.cid===c.id&&!i.paid&&i.due<today()),i=>i.amount):0;
+  const lateSum=c?sum(D.inst.filter(i=>i.cid===c.id&&!i.paid&&i.due<today()),rem):0;
   const v=k=>l&&l[k]?esc(l[k]):'';
   openSheet(l?'تحديث الإجراء القانوني':'إجراء قانوني جديد',`
   <label>نوع الإجراء</label><select id="l_type">${opts(LTYPES,l?l.type:'')}</select>
@@ -704,7 +731,7 @@ function vTenants(){
     const cs=D.contracts.filter(c=>c.tid===t.id&&c.end>today());
     const late=D.inst.filter(i=>!i.paid&&i.due<today()&&cs.some(c=>c.id===i.cid));
     return`<div class="card"><div class="row"><div><div class="nm">👤 ${esc(t.name)}</div><div class="mut">📱 ${esc(t.phone||'لا يوجد رقم')}</div></div>
-      ${late.length?`<span class="tag t-red">متأخر ${money(sum(late,i=>i.amount))}</span>`:cs.length?'<span class="tag t-g">ملتزم</span>':'<span class="tag t-gr">بلا عقد</span>'}</div>
+      ${late.length?`<span class="tag t-red">متأخر ${money(sum(late,rem))}</span>`:cs.length?'<span class="tag t-g">ملتزم</span>':'<span class="tag t-gr">بلا عقد</span>'}</div>
       ${cs.map(c=>{const p=P(c.pid);return`<p class="mut mt">🏢 ${esc(p?p.name:'')} • ${esc(unitName(p,c.uid))}</p>`}).join('')}
       ${D.legal.some(l=>l.tid===t.id&&lOpen(l))?'<p class="mt"><span class="tag t-red">⚖️ عليه إجراء قانوني جارٍ</span></p>':''}
       ${t.notes?`<p class="mut">📝 ${esc(t.notes)}</p>`:''}
@@ -843,7 +870,7 @@ function tenantsSheet(){
     .sort((a,b)=>a.t.name.localeCompare(b.t.name,'ar'));
   openSheet(`المستأجرون (${D.tenants.length})`,`<input placeholder="🔍 ابحث بالاسم" style="margin-bottom:12px" oninput="const q=this.value.trim();document.querySelectorAll('.trow').forEach(r=>r.style.display=r.dataset.n.includes(q)?'':'none')">`+
   rows.map(({t,cs,late})=>`<div class="card trow" data-n="${esc(t.name)}">
-    <div class="row"><div class="nm">👤 ${esc(t.name)}</div>${late.length?`<span class="tag t-red">متأخر ${money(sum(late,i=>i.amount))}</span>`:cs.length?'<span class="tag t-g">ملتزم</span>':'<span class="tag t-gr">بلا عقد</span>'}</div>
+    <div class="row"><div class="nm">👤 ${esc(t.name)}</div>${late.length?`<span class="tag t-red">متأخر ${money(sum(late,rem))}</span>`:cs.length?'<span class="tag t-g">ملتزم</span>':'<span class="tag t-gr">بلا عقد</span>'}</div>
     ${cs.map(c=>{const p=P(c.pid),u=p&&p.units.find(x=>x.id===c.uid);
       return`<button class="unit on mt" style="width:100%" onclick="unitDetail('${c.pid}','${c.uid}')">${u?ic(u.type):''} ${esc(p?p.name:'')} • ${esc(u?u.name:'')}<small>حتى ${fmtDate(c.end)} • اضغط لعرض التفاصيل</small></button>`}).join('')}
     ${t.phone?`<div class="btns"><a class="btn b-l" href="tel:${esc(t.phone)}">📞 ${esc(t.phone)}</a><a class="btn b-w" href="https://wa.me/${waNum(t.phone)}" target="_blank">💬 واتساب</a></div>`:''}
@@ -854,7 +881,7 @@ function contractInst(cid){
   const c=C(cid),t=T(c.tid),p=P(c.pid);
   const ins=D.inst.filter(i=>i.cid===cid).sort((a,b)=>a.due.localeCompare(b.due));
   openSheet('دفعات العقد',`<div class="card soft"><div class="nm">👤 ${esc(t?t.name:'')}</div><p>🏢 ${esc(p?p.name:'')} • ${esc(unitName(p,c.uid))}</p>
-  <p>المحصّل: <b>${money(sum(ins.filter(i=>i.paid),i=>i.paidAmount))}</b> من <b>${money(sum(ins,i=>i.amount))}</b></p></div>${ins.map(instCard).join('')}`);
+  <p>المحصّل: <b>${money(sum(ins,paidOf))}</b> من <b>${money(sum(ins,i=>i.amount))}</b></p></div>${ins.map(instCard).join('')}`);
 }
 function delContract(id){
   if(!confirm('حذف العقد وكل دفعاته وصوره؟'))return;(C(id).imgs||[]).forEach(imgDel);
@@ -869,13 +896,14 @@ function vPay(){
   list.sort(payFilter==='paid'?(a,b)=>(b.paidDate||'').localeCompare(a.paidDate||''):(a,b)=>a.due.localeCompare(b.due));
   let h=`<div class="chips">${Object.keys(F).map(k=>`<button class="chip ${k===payFilter?'on':''}" onclick="payFilter='${k}';render()">${F[k][0]} (${D.inst.filter(F[k][1]).length})</button>`).join('')}</div>`;
   if(!D.inst.length)return h+emptyBox('💰','لا توجد دفعات بعد — الدفعات تُنشأ تلقائياً عند تأجير وحدة','<button class="btn b-g full big" onclick="propForm()">🏢 أضف عقار</button>');
-  if(list.length)h+=`<p class="mut" style="margin:4px">المجموع: <b>${money(sum(list,i=>i.paid?i.paidAmount:i.amount))}</b></p>`;
+  if(list.length)h+=`<p class="mut" style="margin:4px">المجموع: <b>${money(sum(list,i=>i.paid?i.paidAmount:rem(i)))}</b></p>`;
   return h+(list.length?list.slice(0,150).map(instCard).join(''):emptyBox('👍','لا يوجد شيء هنا'));
 }
 function payForm(id){
   const i=I(id),c=C(i.cid),t=T(c.tid);
-  openSheet('تسجيل دفعة',`<div class="card soft"><div class="nm">👤 ${esc(t?t.name:'')}</div><p>مستحقة بتاريخ ${fmtDate(i.due)} — ${money(i.amount)}</p></div>
-  <label>المبلغ المدفوع (د.أ)</label><input id="f_amt" type="number" inputmode="decimal" value="${i.amount}">
+  openSheet('تسجيل دفعة',`<div class="card soft"><div class="nm">👤 ${esc(t?t.name:'')}</div><p>مستحقة بتاريخ ${fmtDate(i.due)} — ${money(i.amount)}</p>${paidOf(i)>0?`<p>دُفع سابقاً: <b>${money(paidOf(i))}</b> • الباقي: <b class="red">${money(rem(i))}</b></p>`:''}</div>
+  <label>المبلغ المدفوع (د.أ)</label><input id="f_amt" type="number" inputmode="decimal" value="${rem(i)}">
+  <p class="mut">💡 إذا دفع المستأجر جزءاً فقط اكتب ما دفعه، ويبقى الباقي ديناً عليه في نفس الدفعة.</p>
   <label>تاريخ الدفع</label><input id="f_date" type="date" data-today value="${today()}">
   <label>طريقة الدفع</label><select id="f_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],i.method)}</select>
   <label>ملاحظة (اختياري)</label><input id="f_note">
@@ -883,14 +911,18 @@ function payForm(id){
   <button class="btn b-l full" onclick="clearSheet()">🧹 مسح الحقول</button>`);
 }
 function doPay(id){
-  const i=I(id);i.paid=true;i.paidAmount=+val('f_amt')||i.amount;i.paidDate=val('f_date')||today();i.payMethod=val('f_m');i.note=val('f_note');
-  after('تم تسجيل الدفعة ✅');
+  const i=I(id),a=+val('f_amt');if(!(a>0)){toast('اكتب المبلغ المدفوع');return}
+  if(a>rem(i)+0.0005&&!confirm('المبلغ ('+money(a)+') أكبر من الباقي على هذه الدفعة ('+money(rem(i))+'). متابعة؟'))return;
+  const p={id:uid(),amt:a,date:val('f_date')||today(),method:val('f_m'),note:val('f_note'),rno:nextNo('r')};
+  i.pays=i.pays||[];i.pays.push(p);syncInst(i);
+  after('تم تسجيل الدفعة ✅ — سند قبض رقم '+p.rno+(i.paid?'':' • الباقي '+money(rem(i))));
+  rcpt(id,p.id);
 }
-function unpay(id){if(!confirm('إلغاء تسجيل هذه الدفعة؟'))return;const i=I(id);i.paid=false;delete i.paidAmount;delete i.paidDate;after('تم الإلغاء')}
+function unpay(id,pid){if(!confirm('إلغاء تسجيل هذا المبلغ؟'))return;const i=I(id);i.pays=(i.pays||[]).filter(p=>pid?p.id!==pid:false);syncInst(i);after('تم الإلغاء')}
 function remind(id){
   const i=I(id),c=C(i.cid),t=T(c.tid),p=P(c.pid);
   const late=i.due<today();
-  const msg=`السلام عليكم ${t.name}،\nنذكّركم بدفعة الإيجار الخاصة بـ ${p.name} - ${unitName(p,c.uid)}\nالمبلغ: ${money(i.amount)}\n${late?'كانت مستحقة بتاريخ':'تاريخ الاستحقاق'}: ${fmtDate(i.due)}\nشاكرين تعاونكم 🌹`;
+  const msg=`السلام عليكم ${t.name}،\nنذكّركم بدفعة الإيجار الخاصة بـ ${p.name} - ${unitName(p,c.uid)}\nالمبلغ: ${money(rem(i))}${paidOf(i)>0?' (الباقي من '+money(i.amount)+')':''}\n${late?'كانت مستحقة بتاريخ':'تاريخ الاستحقاق'}: ${fmtDate(i.due)}\nشاكرين تعاونكم 🌹`;
   openExt('https://wa.me/'+waNum(t.phone)+'?text='+encodeURIComponent(msg));
 }
 
@@ -1135,7 +1167,7 @@ function csvUnits(){
 function csvPays(){
   const td=today(),rows=[['العقار','الوحدة','المستأجر','الهاتف','تاريخ الاستحقاق','المبلغ','الحالة','تاريخ الدفع','المبلغ المدفوع','طريقة الدفع','رقم الشيك','البنك','ملاحظة']];
   [...D.inst].sort((a,b)=>a.due.localeCompare(b.due)).forEach(i=>{const c=C(i.cid);if(!c)return;const t=T(c.tid),p=P(c.pid);
-    rows.push([p?p.name:'',unitName(p,c.uid),t?t.name:'',t?t.phone:'',i.due,i.amount,i.paid?'مدفوعة':i.due<td?'متأخرة':'قادمة',i.paidDate||'',i.paid?i.paidAmount:'',i.paid?i.payMethod:i.method,i.checkNo||'',i.bank||'',i.note||''])});
+    rows.push([p?p.name:'',unitName(p,c.uid),t?t.name:'',t?t.phone:'',i.due,i.amount,i.paid?'مدفوعة':paidOf(i)>0?'جزئي':i.due<td?'متأخرة':'قادمة',i.paidDate||'',paidOf(i)||'',paidOf(i)?i.payMethod:i.method,i.checkNo||'',i.bank||'',i.note||''])});
   csvDownload('amlaki-payments-'+today()+'.csv',rows);
 }
 function csvLegal(){
@@ -1148,7 +1180,7 @@ function csvLegal(){
 function cStats(c){
   const td=today(),ins=D.inst.filter(i=>i.cid===c.id).sort((a,b)=>a.due.localeCompare(b.due));
   const late=ins.filter(i=>!i.paid&&i.due<td),rest=ins.filter(i=>!i.paid&&i.due>=td);
-  return{ins,paid:sum(ins.filter(i=>i.paid),i=>i.paidAmount),late:sum(late,i=>i.amount),rest:sum(rest,i=>i.amount),total:sum(ins,i=>i.amount)};
+  return{ins,paid:sum(ins,paidOf),late:sum(late,rem),rest:sum(rest,rem),total:sum(ins,i=>i.amount)};
 }
 function openRep(html){document.getElementById('repBody').innerHTML=html;const r=document.getElementById('rep');r.classList.add('open');r.scrollTop=0}
 function closeRep(){document.getElementById('rep').classList.remove('open')}
@@ -1173,8 +1205,8 @@ function lateList(pid){
   const L=D.inst.filter(i=>!i.paid&&i.due<td).map(i=>({i,c:C(i.cid)})).filter(x=>x.c&&(!pid||x.c.pid===pid));
   const nm=x=>(T(x.c.tid)||{name:''}).name;
   L.sort((a,b)=>nm(a).localeCompare(nm(b),'ar')||a.i.due.localeCompare(b.i.due));
-  const rows=L.map(({i,c})=>{const t=T(c.tid),p=P(c.pid);return tr([esc(t?t.name:''),esc(t&&t.phone||''),esc((p?p.name:'')+' - '+unitName(p,c.uid)),fmtDate(i.due),days(i.due,td)+' يوم',money(i.amount)])});
-  const total=sum(L,x=>x.i.amount);
+  const rows=L.map(({i,c})=>{const t=T(c.tid),p=P(c.pid);return tr([esc(t?t.name:''),esc(t&&t.phone||''),esc((p?p.name:'')+' - '+unitName(p,c.uid)),fmtDate(i.due),days(i.due,td)+' يوم',money(rem(i))+(paidOf(i)>0?' (جزئي)':'')])});
+  const total=sum(L,x=>rem(x.i));
   return{n:L.length,total,html:tbl(['المستأجر','الهاتف','العقار / الوحدة','تاريخ الاستحقاق','مدة التأخير','المبلغ'],rows,['المجموع','','','','',money(total)])};
 }
 function legalTbl(L){
@@ -1183,7 +1215,7 @@ function legalTbl(L){
 }
 function contractBlock(c){
   const p=P(c.pid),t=T(c.tid),s=cStats(c),td=today();
-  const rows=s.ins.map((i,k)=>tr([k+1,fmtDate(i.due),money(i.amount),i.paid?'✔ مدفوعة':i.due<td?'متأخرة':'قادمة',i.paid?fmtDate(i.paidDate):'—',i.paid?money(i.paidAmount):'—',esc(i.paid?(i.payMethod||''):(i.method||''))+(i.checkNo?' #'+esc(i.checkNo):'')],i.paid?'':i.due<td?'late':''));
+  const rows=s.ins.map((i,k)=>tr([k+1,fmtDate(i.due),money(i.amount),i.paid?'✔ مدفوعة':paidOf(i)>0?'جزئي — باقي '+money(rem(i)):i.due<td?'متأخرة':'قادمة',paidOf(i)>0?fmtDate(i.paidDate):'—',paidOf(i)>0?money(paidOf(i)):'—',esc(paidOf(i)>0?(i.payMethod||''):(i.method||''))+(i.checkNo?' #'+esc(i.checkNo):'')],i.paid?'':i.due<td?'late':''));
   return`<h2>📄 ${esc(p?p.name:'')} - ${esc(unitName(p,c.uid))} <small>المستأجر: ${esc(t?t.name:'')} • من ${fmtDate(c.start)} إلى ${fmtDate(c.end)} • ${money(c.amount)} ${FREQ[c.freq]||''}${c.svc?' + خدمات '+money(c.svc):''}</small></h2>`+
     rBoxes([['قيمة العقد',money(s.total)],['المستلم',money(s.paid),'g'],['المتأخر',money(s.late),'r'],['الباقي',money(s.rest),'o']])+
     tbl(['#','الاستحقاق','المبلغ','الحالة','تاريخ الدفع','المدفوع','الطريقة'],rows);
@@ -1200,10 +1232,10 @@ function repAll(){
 function repLateOpen(){const lt=lateList();openRep(rHead('تقرير الدفعات المتأخرة')+rBoxes([['إجمالي المتأخر',money(lt.total),'r'],['عدد الدفعات',lt.n]])+lt.html)}
 function repCollect(){
   const f=val('r_from')||'0000-01-01',t=val('r_to')||'9999-12-31',byP={};
-  const L=D.inst.filter(i=>i.paid&&i.paidDate>=f&&i.paidDate<=t&&C(i.cid)).sort((a,b)=>a.paidDate.localeCompare(b.paidDate));
-  const rows=L.map(i=>{const c=C(i.cid),tn=T(c.tid),p=P(c.pid),k=p?p.name:'—';byP[k]=(byP[k]||0)+Number(i.paidAmount||0);
-    return tr([fmtDate(i.paidDate),esc(tn?tn.name:''),esc(k+' - '+unitName(p,c.uid)),fmtDate(i.due),esc(i.payMethod||'')+(i.checkNo?' #'+esc(i.checkNo):''),money(i.paidAmount)])});
-  const total=sum(L,i=>i.paidAmount);
+  const L=allPays(f,t).sort((a,b)=>a.p.date.localeCompare(b.p.date));
+  const rows=L.map(({i,c,p:y})=>{const tn=T(c.tid),p=P(c.pid),k=p?p.name:'—';byP[k]=(byP[k]||0)+Number(y.amt||0);
+    return tr([fmtDate(y.date),esc(tn?tn.name:''),esc(k+' - '+unitName(p,c.uid)),fmtDate(i.due),esc(y.method||'')+(i.checkNo?' #'+esc(i.checkNo):''),money(y.amt)])});
+  const total=sum(L,x=>x.p.amt);
   openRep(rHead('تقرير التحصيل',`من ${fmtDate(f)} إلى ${fmtDate(t)}`)+rBoxes([['إجمالي المحصّل',money(total),'g'],['عدد الدفعات',L.length]])+
     `<h2>حسب العقار</h2>`+tbl(['العقار','المحصّل'],Object.entries(byP).map(([k,v])=>tr([esc(k),money(v)])),['المجموع',money(total)])+
     `<h2>تفاصيل الدفعات</h2>`+tbl(['تاريخ الدفع','المستأجر','العقار / الوحدة','الاستحقاق','الطريقة','المبلغ'],rows,['المجموع','','','','',money(total)]));
@@ -1240,6 +1272,7 @@ function reportsSheet(){
   <button class="btn b-g full big" onclick="repAll()">🏢 التقرير الشامل لكل العقارات</button>
   <button class="btn b-g full big" onclick="repLateOpen()">⚠️ تقرير المتأخرات</button>
   <button class="btn b-g full big" onclick="repLegal()">⚖️ تقرير الإجراءات القانونية</button>
+  <button class="btn b-g full big" onclick="closeAll();cashSheet()">💰 الصندوق وكشف الحركة</button>
   <div class="card soft mt"><div class="nm">💵 تقرير التحصيل لفترة</div>
     <div class="row2"><div><label>من</label><input type="date" id="r_from" value="${m}"></div><div><label>إلى</label><input type="date" id="r_to" value="${today()}"></div></div>
     <button class="btn b-g full" onclick="repCollect()">عرض تقرير التحصيل</button></div>
@@ -1248,9 +1281,199 @@ function reportsSheet(){
     <button class="btn b-l full" onclick="repProp(val('r_p'))">🖨️ عرض تقرير العقار</button></div>
   <div class="card"><div class="nm">👤 كشف حساب مستأجر</div><select id="r_t" class="mt">${opts(D.tenants.map(t=>[t.id,t.name]))}</select>
     <button class="btn b-l full" onclick="repTenant(val('r_t'))">🖨️ عرض كشف الحساب</button></div>
-  <p class="mut">💡 تقرير أي وحدة تجده بزر «طباعة» داخل الوحدة نفسها.</p>
+  ${allPartners().length?`<div class="card"><div class="nm">🤝 كشف حساب شريك</div><select id="r_pt" class="mt">${opts(allPartners())}</select>
+    <div class="row2"><div><label>من</label><input type="date" id="r_pf" value="${today().slice(0,4)}-01-01"></div><div><label>إلى</label><input type="date" id="r_pto" value="${today()}"></div></div>
+    <button class="btn b-l full" onclick="repPartner(val('r_pt'),val('r_pf'),val('r_pto'))">🖨️ عرض كشف الشريك</button></div>`:''}
+  <p class="mut">💡 تقرير أي وحدة تجده بزر «طباعة» داخل الوحدة نفسها. وكشف توزيع الشركاء من زر «🤝 الشركاء» في العقار.</p>
   <div class="sec">💾 تصدير واستعادة البيانات</div><div class="card">${dataHtml()}</div>`);
 }
+
+/* ========== التفقيط وسندات القبض والصرف ========== */
+function addDays(d,n){const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)}
+function nextNo(k){const q=D.settings.seq=D.settings.seq||{};q[k]=(q[k]||0)+1;return q[k]}
+function wordsAr(n){
+  n=Math.floor(Math.abs(+n||0));if(!n)return'صفر';
+  const one=['','واحد','اثنان','ثلاثة','أربعة','خمسة','ستة','سبعة','ثمانية','تسعة','عشرة','أحد عشر','اثنا عشر','ثلاثة عشر','أربعة عشر','خمسة عشر','ستة عشر','سبعة عشر','ثمانية عشر','تسعة عشر'];
+  const ten=['','','عشرون','ثلاثون','أربعون','خمسون','ستون','سبعون','ثمانون','تسعون'];
+  const hun=['','مائة','مائتان','ثلاثمائة','أربعمائة','خمسمائة','ستمائة','سبعمائة','ثمانمائة','تسعمائة'];
+  const b1000=x=>{const h=Math.floor(x/100),r=x%100,p=[];if(h)p.push(hun[h]);
+    if(r){if(r<20)p.push(one[r]);else{const u=r%10,t=Math.floor(r/10);p.push(u?one[u]+' و'+ten[t]:ten[t])}}return p.join(' و')};
+  const grp=(x,w1,w2,w3,w11)=>x===1?w1:x===2?w2:x<=10?b1000(x)+' '+w3:b1000(x)+' '+w11;
+  const p=[],m=Math.floor(n/1e6),k=Math.floor(n/1000)%1000,r=n%1000;
+  if(m)p.push(grp(m,'مليون','مليونان','ملايين','مليون'));
+  if(k)p.push(grp(k,'ألف','ألفان','آلاف','ألف'));
+  if(r)p.push(b1000(r));
+  return p.join(' و');
+}
+function tafqeet(a){
+  a=Math.round((+a||0)*1000)/1000;const d=Math.floor(a),f=Math.round((a-d)*1000);
+  return'فقط '+(d?wordsAr(d)+' دينار أردني':'')+(d&&f?' و':'')+(f?wordsAr(f)+' فلس':'')+(!d&&!f?'صفر دينار':'')+' لا غير';
+}
+function vchHtml(o,copy){
+  const isOut=o.kind==='out';
+  return`<div class="vch"><div class="vt"><div><h1>${isOut?'سند صرف':'سند قبض'}</h1><div class="mut">${esc(D.settings.owner||'أملاكي')}</div></div>
+  <div class="no ${isOut?'r':''}">رقم: ${o.no||'—'}</div><div><b>التاريخ:</b> ${fmtDate(o.date)}</div></div>
+  <div class="vl"><span>${isOut?'صرفنا إلى السيد/ة':'استلمنا من السيد/ة'}</span><b>${esc(o.party||'—')}</b></div>
+  <div class="vl"><span>مبلغاً وقدره</span><b><span class="vam">${money(o.amount)}</span></b></div>
+  <div class="vl"><span>كتابةً</span><b>${tafqeet(o.amount)}</b></div>
+  <div class="vl"><span>وذلك عن</span><b>${esc(o.about||'')}</b></div>
+  <div class="vl"><span>طريقة الدفع</span><b>${esc(o.method||'نقدي')}${o.check?' — '+esc(o.check):''}</b></div>
+  ${o.note?`<div class="vl"><span>ملاحظات</span><b>${esc(o.note)}</b></div>`:''}
+  <div class="sign" style="margin-top:34px"><div>${isOut?'توقيع المستلم':'توقيع الدافع'}<br><br>.....................</div><div>${isOut?'توقيع الصارف':'توقيع المستلم'}<br><br>.....................</div></div>
+  ${copy?`<div class="vcopy">${copy}</div>`:''}</div>`;
+}
+function vchOpen(o,two){openRep(vchHtml(o,two?'نسخة المالك':'')+(two?`<div class="vcut">✂ - - - - - - - - - - - - - - - - - - - -</div>`+vchHtml(o,'نسخة المستأجر'):''))}
+function instVch(id,payId){
+  const i=I(id),c=C(i.cid),t=c&&T(c.tid),p=c&&P(c.pid);
+  const y=(i.pays||[]).find(x=>x.id===payId)||(i.pays||[]).slice(-1)[0]||{};
+  if(!y.rno){y.rno=nextNo('r');syncInst(i);save()}
+  const about=`إيجار ${p?p.name:''} - ${unitName(p,c&&c.uid)} عن الدفعة المستحقة بتاريخ ${fmtDate(i.due)}${i.svc?' (شاملة أجور خدمات '+money(i.svc)+')':''}`;
+  const part=(+y.amt||0)<(+i.amount||0)-0.0005;
+  return{kind:'in',no:y.rno,date:y.date,party:t?t.name:'',amount:y.amt,about:about+(part?` — دفعة جزئية من أصل ${money(i.amount)}${i.paid?'':'، الباقي '+money(rem(i))}`:''),method:y.method,check:i.checkNo?('شيك رقم '+i.checkNo+(i.bank?' - '+i.bank:'')):'',note:y.note,phone:t&&t.phone};
+}
+function rcpt(id,pid){vchOpen(instVch(id,pid),true)}
+function rcptWa(id,pid){
+  const o=instVch(id,pid);
+  const msg=`🧾 سند قبض رقم ${o.no}\nالتاريخ: ${fmtDate(o.date)}\nاستلمنا من السيد/ة: ${o.party}\nمبلغ: ${money(o.amount)}\n(${tafqeet(o.amount)})\nوذلك عن: ${o.about}\nطريقة الدفع: ${o.method||'نقدي'}\n\n${D.settings.owner||''}\nشكراً لالتزامكم 🌹`;
+  openExt('https://wa.me/'+waNum(o.phone)+'?text='+encodeURIComponent(msg));
+}
+
+/* ========== الصندوق: الإيرادات والمصروفات ========== */
+const CASH_IN=['تأمين / عربون','بيع / تعويض','أخرى'];
+const CASH_OUT=['صيانة وإصلاح','كهرباء وماء','نظافة وحراسة','رواتب','عمولة مكتب','ضرائب ورسوم','محامي وقضايا','سحب المالك','أخرى'];
+const CASH_IC={'إيجار':'🏠','مسقفات ومعارف':'🏛️','صيانة وإصلاح':'🔧','كهرباء وماء':'💡','نظافة وحراسة':'🧹','رواتب':'👷','عمولة مكتب':'🤝','ضرائب ورسوم':'🧾','محامي وقضايا':'⚖️','سحب المالك':'👤','تأمين / عربون':'🔐','بيع / تعويض':'💼','أخرى':'📌'};
+let cashPer='m';
+function catsOf(k){const c=(D.settings.cats||{})[k]||[];const base=k==='out'?CASH_OUT:CASH_IN;return[...base.filter(x=>x!=='أخرى'),...c,'أخرى']}
+function catAdd(k,n){n=(n||'').trim();if(!n)return'';D.settings.cats=D.settings.cats||{in:[],out:[]};const L=D.settings.cats[k]=D.settings.cats[k]||[];if(!catsOf(k).includes(n))L.push(n);return n}
+function catsSheet(){
+  const c=D.settings.cats||{};
+  const blk=(k,t)=>`<div class="card"><div class="nm">${t}</div>${catsOf(k).map(n=>{const mine=(c[k]||[]).includes(n);
+    return`<div class="row" style="padding:6px 0;border-bottom:1px dashed #ddd"><span>${CASH_IC[n]||'📌'} ${esc(n)}</span>${mine?`<button class="btn b-r" style="min-height:40px;padding:4px 12px" onclick="catDel('${k}',${(c[k]||[]).indexOf(n)})">🗑️</button>`:'<span class="mut">أساسي</span>'}</div>`}).join('')}
+    <div class="row2 mt"><div style="flex:2"><input id="nc_${k}" placeholder="اسم نوع جديد"></div><div><button class="btn b-g full" onclick="catAdd('${k}',val('nc_${k}'));save();catsSheet()">➕ إضافة</button></div></div></div>`;
+  openSheet('📋 أنواع المصاريف والإيرادات',blk('out','⬇️ أنواع المصاريف')+blk('in','⬆️ أنواع الإيرادات')+`<button class="btn b-l full" onclick="cashSheet()">↩️ رجوع إلى الصندوق</button>`);
+}
+function catDel(k,ix){const c=D.settings.cats,n=(c[k]||[])[ix];if(n==null)return;if(!confirm('حذف النوع «'+n+'» من القائمة؟ (الحركات المسجّلة به تبقى كما هي)'))return;c[k].splice(ix,1);save();catsSheet()}
+function cashRange(k){const t=today();
+  if(k==='m')return[t.slice(0,8)+'01',t];if(k==='y')return[t.slice(0,4)+'-01-01',t];
+  if(k==='c')return[val('k_from')||'0000-01-01',val('k_to')||'9999-12-31'];return['0000-01-01','9999-12-31']}
+function cashMoves(f,to){
+  const L=[];
+  D.inst.filter(i=>C(i.cid)).forEach(i=>{const c=C(i.cid),t=T(c.tid),p=P(c.pid);
+    (i.pays||[]).forEach(y=>L.push({src:'inst',id:i.id,pay:y.id,kind:'in',date:y.date,amount:+y.amt||0,cat:'إيجار',no:y.rno,desc:(t?t.name:'')+' — '+(p?p.name:'')+' - '+unitName(p,c.uid),method:y.method}))});
+  D.props.forEach(p=>(p.taxes||[]).filter(r=>r.paid).forEach(r=>L.push({src:'tax',pid:p.id,kind:'out',date:r.paidDate,amount:(+r.masq||0)+(+r.maaref||0),cat:'مسقفات ومعارف',desc:p.name+' — عام '+r.year+(r.receipt?' (إيصال '+r.receipt+')':'')})));
+  (D.cash||[]).forEach(x=>{const p=x.pid&&P(x.pid);L.push({src:'cash',id:x.id,kind:x.kind,date:x.date,amount:+x.amount||0,cat:x.cat,no:x.no,desc:[x.party,p?p.name:'',x.note].filter(Boolean).join(' — '),method:x.method})});
+  return L.filter(x=>x.date&&x.date>=f&&x.date<=to).sort((a,b)=>b.date.localeCompare(a.date)||(b.no||0)-(a.no||0));
+}
+function cashTot(L){const i=sum(L.filter(x=>x.kind==='in'),x=>x.amount),o=sum(L.filter(x=>x.kind==='out'),x=>x.amount);return{i,o,b:i-o}}
+function cashSheet(){
+  ctx=()=>cashSheet();const[f,to]=cashRange(cashPer),L=cashMoves(f,to),T0=cashTot(L),all=cashTot(cashMoves('0000-01-01','9999-12-31'));
+  const P0={m:'هذا الشهر',y:'هذه السنة',a:'الكل'};
+  const row=x=>`<div class="card"><div class="cmv"><span class="ci">${CASH_IC[x.cat]||'📌'}</span><div class="cx"><div class="nm">${esc(x.cat)}${x.no?` <small class="mut">#${x.no}</small>`:''}</div><div class="mut">${esc(x.desc||'')}</div><div class="mut">📅 ${fmtDate(x.date)}${x.method?' • '+esc(x.method):''}</div></div>
+    <b class="amt ${x.kind}">${x.kind==='in'?'+':'−'} ${money(x.amount)}</b></div>
+    ${x.src==='inst'?`<div class="btns"><button class="btn b-l" onclick="rcpt('${x.id}','${x.pay}')">🧾 سند القبض</button></div>`:''}
+    ${x.src==='cash'?`<div class="btns"><button class="btn b-l" onclick="cashVch('${x.id}')">🧾 ${x.kind==='in'?'سند القبض':'سند الصرف'}</button><button class="btn b-l" onclick="cashForm('${x.kind}','${x.id}')">✏️ تعديل</button><button class="btn b-r" onclick="cashDel('${x.id}')">🗑️</button></div>`:''}</div>`;
+  openSheet('💰 الصندوق',`<div class="card soft"><div class="row"><b>رصيد الصندوق الكلي</b><b class="amt ${all.b<0?'out':'in'}">${money(all.b)}</b></div></div>
+  <div class="btns"><button class="btn b-g big" onclick="cashForm('in')">➕ إيراد</button><button class="btn b-r big" onclick="cashForm('out')">➖ مصروف</button></div>
+  <div class="chips">${Object.keys(P0).map(k=>`<button class="chip ${k===cashPer?'on':''}" onclick="cashPer='${k}';cashSheet()">${P0[k]}</button>`).join('')}</div>
+  <div class="stats"><div class="stat"><span>⬆️ الإيرادات</span><b>${money(T0.i)}</b></div><div class="stat red"><span>⬇️ المصروفات</span><b>${money(T0.o)}</b></div><div class="stat gold" style="grid-column:1/-1"><span>📊 الصافي ${P0[cashPer]||''}</span><b>${money(T0.b)}</b></div></div>
+  <div class="card soft"><div class="nm">🖨️ كشف الصندوق لفترة</div><div class="row2"><div><label>من</label><input type="date" id="k_from" value="${f.startsWith('0000')?today().slice(0,8)+'01':f}"></div><div><label>إلى</label><input type="date" id="k_to" value="${to.startsWith('9999')?today():to}"></div></div>
+  <button class="btn b-g full" onclick="repCash()">عرض كشف الصندوق</button></div>
+  <button class="btn b-l full" onclick="catsSheet()">📋 أنواع المصاريف والإيرادات</button>
+  <p class="mut">💡 دفعات الإيجار ودفع المسقفات تدخل الصندوق تلقائياً.</p>
+  ${L.length?L.slice(0,200).map(row).join(''):emptyBox('💰','لا توجد حركات في هذه الفترة')}`);
+}
+function cashForm(kind,id){
+  const x=id?(D.cash||[]).find(c=>c.id===id):{kind,date:today()};const out=kind==='out';
+  openSheet(out?'➖ مصروف جديد (سند صرف)':'➕ إيراد جديد (سند قبض)',`
+  <label>المبلغ (د.أ)</label><input id="k_amt" type="number" inputmode="decimal" value="${x.amount??''}">
+  <label>التاريخ</label><input id="k_date" type="date" value="${x.date||today()}">
+  <label>${out?'نوع المصروف':'نوع الإيراد'}</label><select id="k_cat" onchange="document.getElementById('k_nc').style.display=this.value==='__new'?'':'none'">${opts([...catsOf(kind),...(x.cat&&!catsOf(kind).includes(x.cat)?[x.cat]:[])],x.cat)}<option value="__new">➕ إضافة نوع جديد…</option></select>
+  <input id="k_nc" placeholder="اكتب اسم النوع الجديد" style="display:none">
+  <label>${out?'صُرف إلى (اسم الشخص / الجهة)':'استُلم من (اسم الشخص / الجهة)'}</label><input id="k_party" value="${esc(x.party||'')}">
+  <label>العقار (اختياري)</label><select id="k_pid"><option value="">— عام —</option>${opts(D.props.map(p=>[p.id,p.name]),x.pid)}</select>
+  <label>طريقة الدفع</label><select id="k_m">${opts(['نقدي','شيك','تحويل بنكي','محفظة إلكترونية'],x.method)}</select>
+  <label>البيان / ملاحظة</label><input id="k_note" value="${esc(x.note||'')}">
+  <button class="btn ${out?'b-r':'b-g'} full big" onclick="cashSave('${kind}','${id||''}')">💾 حفظ وإنشاء ${out?'سند الصرف':'سند القبض'}</button>
+  <button class="btn b-l full" onclick="clearSheet()">🧹 مسح الحقول</button>`);
+}
+function cashSave(kind,id){
+  const a=+val('k_amt');if(!a||a<=0){toast('اكتب المبلغ');return}
+  if(val('k_cat')==='__new'&&!val('k_nc').trim()){toast('اكتب اسم النوع الجديد');return}
+  D.cash=D.cash||[];let x=id&&D.cash.find(c=>c.id===id);
+  if(!x){x={id:uid(),kind,no:nextNo(kind==='out'?'x':'k')};D.cash.push(x)}
+  let cat=val('k_cat');if(cat==='__new'){cat=catAdd(kind,val('k_nc'));if(!cat){toast('اكتب اسم النوع الجديد');return}}
+  Object.assign(x,{amount:a,date:val('k_date')||today(),cat,party:val('k_party'),pid:val('k_pid'),method:val('k_m'),note:val('k_note'),by:typeof cur!=='undefined'?nameOf(cur):''});
+  save();render();cashSheet();toast((kind==='out'?'تم حفظ المصروف — سند صرف رقم ':'تم حفظ الإيراد — سند قبض رقم ')+x.no);
+}
+function cashDel(id){if(!confirm('حذف هذه الحركة من الصندوق؟'))return;D.cash=D.cash.filter(c=>c.id!==id);save();cashSheet();toast('تم الحذف')}
+function cashVch(id){const x=D.cash.find(c=>c.id===id);if(!x)return;const p=x.pid&&P(x.pid);
+  vchOpen({kind:x.kind,no:(x.kind==='out'?'ص-':'ق-')+x.no,date:x.date,party:x.party,amount:x.amount,about:x.cat+(p?' — '+p.name:'')+(x.note?' — '+x.note:''),method:x.method},false)}
+function repCash(){
+  const f=val('k_from')||'0000-01-01',to=val('k_to')||'9999-12-31';
+  const prev=cashTot(cashMoves('0000-01-01',addDays(f,-1))).b,L=cashMoves(f,to).reverse(),T0=cashTot(L);
+  let bal=prev;const byC={};
+  const rows=L.map(x=>{bal+=x.kind==='in'?x.amount:-x.amount;const k=(x.kind==='in'?'⬆️ ':'⬇️ ')+x.cat;byC[k]=(byC[k]||0)+x.amount;
+    return tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.kind==='in'?money(x.amount):'',x.kind==='out'?`<b class="red">${money(x.amount)}</b>`:'',money(bal)])});
+  openRep(rHead('كشف الصندوق: الإيرادات والمصروفات',`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
+    rBoxes([['الرصيد السابق',money(prev)],['الإيرادات',money(T0.i),'g'],['المصروفات',money(T0.o),'r'],['الصافي للفترة',money(T0.b),'o'],['الرصيد الحالي',money(prev+T0.b),'g']])+
+    `<h2>حسب البند</h2>`+tbl(['البند','المبلغ'],Object.entries(byC).map(([k,v])=>tr([esc(k),money(v)])))+
+    `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','إيراد','مصروف','الرصيد'],rows,['المجموع','','','',money(T0.i),money(T0.o),money(prev+T0.b)]));
+}
+
+
+/* ========== الشركاء ========== */
+const pctSum=p=>sum(p.partners||[],x=>x.pct);
+function partnersSheet(pid,eid){
+  const p=P(pid);if(!p)return;ctx=()=>partnersSheet(pid);p.partners=p.partners||[];
+  const e=eid?p.partners.find(x=>x.id===eid):{};const tot=pctSum(p),m=today().slice(0,4)+'-01-01';
+  openSheet('🤝 شركاء '+p.name,`<div class="card soft"><div class="row"><b>مجموع النسب</b><b class="amt ${Math.abs(tot-100)<0.01?'in':'out'}">${+tot.toFixed(2)}%</b></div>
+  ${p.partners.length&&Math.abs(tot-100)>=0.01?`<p class="mut">⚠️ مجموع النسب يجب أن يكون 100%${tot<100?' — الباقي '+(+(100-tot).toFixed(2))+'%':''}</p>`:''}
+  ${!p.partners.length?'<p class="mut">لم تُضف شركاء بعد. إذا كان العقار ملكك وحدك فلا تحتاج لإضافة أحد.</p>':''}</div>
+  ${p.partners.map(x=>`<div class="card"><div class="row"><div><div class="nm">👤 ${esc(x.name)}</div><div class="mut">${x.phone?'📱 '+esc(x.phone):''}</div></div><b class="amt">${+(+x.pct).toFixed(2)}%</b></div>
+    <div class="btns"><button class="btn b-l" onclick="partnersSheet('${pid}','${x.id}')">✏️ تعديل</button>${x.phone?`<button class="btn b-w" onclick="openExt('https://wa.me/${waNum(x.phone)}')">💬</button>`:''}<button class="btn b-r" onclick="partnerDel('${pid}','${x.id}')">🗑️</button></div></div>`).join('')}
+  <div class="card"><div class="nm">${eid?'✏️ تعديل شريك':'➕ إضافة شريك'}</div>
+  <label>اسم الشريك</label><input id="pt_n" list="ptlist" value="${esc(e.name||'')}"><datalist id="ptlist">${allPartners().map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+  <div class="row2"><div><label>النسبة %</label><input id="pt_p" type="number" inputmode="decimal" value="${e.pct??(p.partners.length?Math.max(0,+(100-tot).toFixed(2)):'')}"></div><div><label>الهاتف (اختياري)</label><input id="pt_t" type="tel" value="${esc(e.phone||'')}"></div></div>
+  <button class="btn b-g full big" onclick="partnerSave('${pid}','${eid||''}')">💾 حفظ الشريك</button>${eid?`<button class="btn b-l full" onclick="partnersSheet('${pid}')">إلغاء التعديل</button>`:''}</div>
+  ${p.partners.length?`<div class="card soft"><div class="nm">🖨️ كشف توزيع الشركاء</div><div class="row2"><div><label>من</label><input type="date" id="pt_f" value="${m}"></div><div><label>إلى</label><input type="date" id="pt_to" value="${today()}"></div></div>
+  <button class="btn b-g full" onclick="repPartners('${pid}',val('pt_f'),val('pt_to'))">عرض الكشف</button></div>`:''}`);
+}
+function partnerSave(pid,eid){
+  const p=P(pid),n=val('pt_n').trim(),pc=+val('pt_p');
+  if(!n){toast('اكتب اسم الشريك');return}if(!(pc>0&&pc<=100)){toast('اكتب نسبة صحيحة بين 0 و 100');return}
+  const others=sum((p.partners||[]).filter(x=>x.id!==eid),x=>x.pct);if(others+pc>100.001){toast('مجموع النسب سيتجاوز 100% — الباقي '+(+(100-others).toFixed(2))+'%');return}
+  p.partners=p.partners||[];let x=eid&&p.partners.find(y=>y.id===eid);if(!x){x={id:uid()};p.partners.push(x)}
+  Object.assign(x,{name:n,pct:pc,phone:val('pt_t')});save();render();partnersSheet(pid);toast('تم حفظ الشريك ✅');
+}
+function partnerDel(pid,id){if(!confirm('حذف هذا الشريك من العقار؟'))return;const p=P(pid);p.partners=p.partners.filter(x=>x.id!==id);save();render();partnersSheet(pid)}
+function allPartners(){return[...new Set(D.props.flatMap(p=>(p.partners||[]).map(x=>x.name)))].sort((a,b)=>a.localeCompare(b,'ar'))}
+function propMoney(pid,f,to){
+  const L=cashMoves(f,to).filter(x=>{if(x.src==='inst'){const i=I(x.id),c=i&&C(i.cid);return c&&c.pid===pid}
+    if(x.src==='cash'){const c=(D.cash||[]).find(y=>y.id===x.id);return c&&c.pid===pid}
+    if(x.src==='tax')return x.pid===pid;return false});
+  return{L,...cashTot(L)};
+}
+function repPartners(pid,f,to){
+  const p=P(pid);f=f||'0000-01-01';to=to||'9999-12-31';const M=propMoney(pid,f,to),pts=p.partners||[];
+  const rows=pts.map(x=>tr([esc(x.name),(+x.pct)+'%',money(M.i*x.pct/100),money(M.o*x.pct/100),`<b>${money(M.b*x.pct/100)}</b>`]));
+  const byC={};M.L.forEach(x=>{const k=(x.kind==='in'?'⬆️ ':'⬇️ ')+x.cat;byC[k]=(byC[k]||0)+x.amount});
+  openRep(rHead('كشف توزيع الشركاء: '+p.name,`من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
+    rBoxes([['التحصيل (الإيرادات)',money(M.i),'g'],['المدفوعات (المصاريف)',money(M.o),'r'],['الصافي للتوزيع',money(M.b),'o'],['مجموع النسب',pctSum(p)+'%']])+
+    `<h2>🤝 حصة كل شريك</h2>`+tbl(['الشريك','النسبة','حصته من التحصيل','حصته من المدفوعات','الصافي المستحق'],rows,['المجموع',pctSum(p)+'%',money(M.i*pctSum(p)/100),money(M.o*pctSum(p)/100),money(M.b*pctSum(p)/100)])+
+    `<h2>حسب البند</h2>`+tbl(['البند','المبلغ'],Object.entries(byC).map(([k,v])=>tr([esc(k),money(v)])))+
+    `<h2>تفاصيل الحركة</h2>`+tbl(['التاريخ','رقم السند','البند','البيان','إيراد','مصروف'],[...M.L].reverse().map(x=>tr([fmtDate(x.date),x.no||'',esc(x.cat),esc(x.desc||''),x.kind==='in'?money(x.amount):'',x.kind==='out'?money(x.amount):''])),['المجموع','','','',money(M.i),money(M.o)])+
+    `<p class="mut">ملاحظة: يدخل في الكشف فقط ما سُجّل على هذا العقار (الإيجارات، المسقفات، والإيرادات والمصاريف المربوطة بالعقار).</p>`);
+}
+function repPartner(name,f,to){
+  if(!name){toast('اختر شريكاً');return}f=f||'0000-01-01';to=to||'9999-12-31';
+  const ps=D.props.filter(p=>(p.partners||[]).some(x=>x.name===name));let ti=0,to2=0;
+  const rows=ps.map(p=>{const x=p.partners.find(y=>y.name===name),M=propMoney(p.id,f,to),si=M.i*x.pct/100,so=M.o*x.pct/100;ti+=si;to2+=so;
+    return tr([esc(p.name),(+x.pct)+'%',money(M.i),money(M.o),money(si),money(so),`<b>${money(si-so)}</b>`])});
+  openRep(rHead('كشف حساب شريك',`👤 ${esc(name)} • من ${fmtDate(f)} إلى ${fmtDate(to)}`)+
+    rBoxes([['عدد العقارات',ps.length],['حصته من التحصيل',money(ti),'g'],['حصته من المدفوعات',money(to2),'r'],['الصافي المستحق له',money(ti-to2),'o']])+
+    tbl(['العقار','نسبته','تحصيل العقار','مدفوعات العقار','حصته من التحصيل','حصته من المدفوعات','الصافي'],rows,['المجموع','','','',money(ti),money(to2),money(ti-to2)])+sign().replace('توقيع المستأجر','توقيع الشريك'));
+}
+
 /* ========== المسقفات والمعارف ========== */
 const yr=()=>+today().slice(0,4);
 function taxRec(p,y){return(p.taxes||[]).find(t=>t.year===y)}
@@ -1292,6 +1515,9 @@ function taxTbl(list){
 
 /* ========== دليل الاستخدام ========== */
 const GUIDE_AR=[
+['🧾 سند القبض','بعد تسجيل أي دفعة يأخذ سند قبض برقم متسلسل. اضغط «سند قبض» تحت الدفعة المدفوعة لطباعته بنسختين (للمالك وللمستأجر) مع المبلغ كتابةً، أو «إرسال السند» ليصل للمستأجر على الواتساب.'],
+['🤝 الشركاء','في صفحة العقارات اضغط «🤝 الشركاء» تحت العقار، وأضف اسم كل شريك ونسبته (المجموع 100%). من نفس الصفحة اطبع «كشف توزيع الشركاء» لفترة: التحصيل والمدفوعات والصافي وحصة كل شريك. ومن التقارير «كشف حساب شريك» لكل عقاراته معاً.'],
+['💰 الصندوق','من الرئيسية اضغط «الصندوق». دفعات الإيجار والمسقفات تدخل تلقائياً، وتضيف أنت أي إيراد آخر (➕) أو مصروف (➖) مثل الصيانة والكهرباء وسحب المالك، ولكل حركة سند قبض أو صرف. اختر الفترة لترى الإيرادات والمصروفات والصافي، واطبع «كشف الصندوق» مع الرصيد.'],
 ['🔒 البداية وكلمة السر','عند أول تشغيل تكتب اسمك ورقم واتسابك وكلمة سر. يعطيك التطبيق رمز استعادة أرسله إلى واتسابك واحتفظ بالرسالة. بعدها لا يفتح التطبيق إلا بكلمة السر، ويُقفل فوراً كلما خرجت منه أو أطفأت الشاشة. زر 🔒 في الأعلى يقفله فوراً.'],
 ['🏢 إضافة عقار ووحداته','من الرئيسية اضغط «أضف عقار». اكتب الاسم والعنوان، ثم أضف الوحدات: اختر النوع (شقة، محل، مكتب...) والعدد واضغط «أضف إلى العقار». كرّر لكل نوع. يمكنك تعديل اسم أي وحدة أو حذفها، ثم اضغط «حفظ العقار».'],
 ['🔑 تأجير وحدة','عند إضافة الوحدة اختر «مؤجّرة»، أو افتح وحدة شاغرة واضغط «أجّر هذه الوحدة». اكتب اسم المستأجر وهاتفه، وقيمة الأجرة (عن السنة أو الشهر)، وأجور الخدمات إن وجدت، وتاريخ البداية والنهاية، وموعد الدفعات. يظهر لك ملخص بعدد الدفعات وقيمتها، وعند الحفظ ينشئ التطبيق كل الدفعات تلقائياً.'],
