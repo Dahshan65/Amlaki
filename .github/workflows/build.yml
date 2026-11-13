@@ -679,3 +679,4 @@ jobs:
           files: |
             Amlaki-v1.0.${{ github.run_number }}.apk
             Amlaki.apk
+            Amlaki-GooglePlay-v1.0.${{ github.run_number }}.aab
