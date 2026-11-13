@@ -1,4 +1,4 @@
-name: Build Amlaki APK
+name: Build Amlaki APK + Google Play AAB
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.13'
 
       - name: Prepare signing key
         env:
@@ -43,7 +43,7 @@ jobs:
           EOF
 
           cat > build.gradle <<'EOF'
-          plugins { id 'com.android.application' version '8.5.2' apply false }
+          plugins { id 'com.android.application' version '8.11.1' apply false }
           EOF
 
           cat > gradle.properties <<'EOF'
@@ -57,13 +57,27 @@ jobs:
           def ks = rootProject.file('amlaki.jks')
           android {
               namespace 'com.dahshan.amlaki'
-              compileSdk 34
+              compileSdk 36
               defaultConfig {
                   applicationId 'com.dahshan.amlaki'
                   minSdk 24
-                  targetSdk 34
+                  targetSdk 36
                   versionCode runNo
                   versionName "1.0.${runNo}"
+              }
+              buildFeatures { buildConfig true }
+              flavorDimensions 'dist'
+              productFlavors {
+                  site {
+                      dimension 'dist'
+                      applicationId 'com.dahshan.amlaki'
+                      buildConfigField 'boolean', 'PLAY', 'false'
+                  }
+                  play {
+                      dimension 'dist'
+                      applicationId 'com.dahshansoft.amlaki'
+                      buildConfigField 'boolean', 'PLAY', 'true'
+                  }
               }
               signingConfigs {
                   rel {
@@ -93,6 +107,7 @@ jobs:
           dependencies {
               implementation 'androidx.core:core:1.13.1'
               implementation 'androidx.webkit:webkit:1.11.0'
+              implementation 'com.android.billingclient:billing:8.0.0'
           }
           EOF
 
@@ -168,6 +183,21 @@ jobs:
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import android.widget.Toast;
+          import android.widget.FrameLayout;
+          import android.view.WindowInsets;
+          import android.graphics.Insets;
+          import com.android.billingclient.api.AcknowledgePurchaseParams;
+          import com.android.billingclient.api.BillingClient;
+          import com.android.billingclient.api.BillingClientStateListener;
+          import com.android.billingclient.api.BillingFlowParams;
+          import com.android.billingclient.api.BillingResult;
+          import com.android.billingclient.api.PendingPurchasesParams;
+          import com.android.billingclient.api.ProductDetails;
+          import com.android.billingclient.api.Purchase;
+          import com.android.billingclient.api.QueryProductDetailsParams;
+          import com.android.billingclient.api.QueryPurchasesParams;
+          import java.util.Collections;
+          import java.util.List;
           import androidx.core.content.FileProvider;
           import androidx.webkit.WebViewAssetLoader;
           import java.io.File;
@@ -183,13 +213,30 @@ jobs:
               private ValueCallback<Uri[]> fileCb;
               private Uri camUri;
               private File camFile;
+              private BillingClient bc;
+              private ProductDetails subPd;
+              private static final String SUB_ID = "amlaki_yearly";
 
               @Override
               protected void onCreate(Bundle state) {
                   super.onCreate(state);
                   getWindow().setStatusBarColor(0xFF0F5C4D);
                   web = new WebView(this);
-                  setContentView(web);
+                  FrameLayout root = new FrameLayout(this);
+                  root.setBackgroundColor(0xFF0F5C4D);
+                  root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                  setContentView(root);
+                  if (Build.VERSION.SDK_INT >= 35) {
+                      root.setOnApplyWindowInsetsListener((v, ins) -> {
+                          Insets b = ins.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                          Insets k = ins.getInsets(WindowInsets.Type.ime());
+                          v.setPadding(b.left, b.top, b.right, Math.max(b.bottom, k.bottom));
+                          return WindowInsets.CONSUMED;
+                      });
+                  }
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::handleBack);
+                  }
 
                   final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                           .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -296,9 +343,110 @@ jobs:
 
               @Override
               public void onBackPressed() {
+                  handleBack();
+              }
+
+              private void handleBack() {
                   web.evaluateJavascript("(typeof appBack==='function')?appBack():'exit'", r -> {
                       if (r == null || r.contains("exit")) finish();
                   });
+              }
+
+              /* ===== Google Play Billing (play flavor only) ===== */
+              private void playJs(final String json) {
+                  runOnUiThread(() -> web.evaluateJavascript("window.onPlaySub&&onPlaySub(" + json + ")", null));
+              }
+
+              private static String js(String v) {
+                  return v == null ? "\"\"" : "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+              }
+
+              private String price() {
+                  try {
+                      List<ProductDetails.PricingPhase> ph = subPd.getSubscriptionOfferDetails().get(0).getPricingPhases().getPricingPhaseList();
+                      return ph.get(ph.size() - 1).getFormattedPrice();
+                  } catch (Exception e) {
+                      return "";
+                  }
+              }
+
+              private void billing(final Runnable then) {
+                  if (!BuildConfig.PLAY) return;
+                  if (bc == null) {
+                      bc = BillingClient.newBuilder(this)
+                              .setListener((r, list) -> {
+                                  int c = r.getResponseCode();
+                                  if (c == BillingClient.BillingResponseCode.OK && list != null) handlePurchases(list, true);
+                                  else if (c == BillingClient.BillingResponseCode.USER_CANCELED) playJs("{\"cancel\":true}");
+                                  else if (c == BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED) queryOwned();
+                                  else playJs("{\"err\":" + c + "}");
+                              })
+                              .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+                              .build();
+                  }
+                  if (bc.isReady()) { runOnUiThread(then); return; }
+                  bc.startConnection(new BillingClientStateListener() {
+                      @Override
+                      public void onBillingSetupFinished(BillingResult r) {
+                          if (r.getResponseCode() == BillingClient.BillingResponseCode.OK) runOnUiThread(then);
+                          else playJs("{\"err\":\"silent\",\"offline\":true}");
+                      }
+                      @Override
+                      public void onBillingServiceDisconnected() {
+                      }
+                  });
+              }
+
+              private void handlePurchases(List<Purchase> list, boolean fresh) {
+                  boolean active = false, pending = false;
+                  for (Purchase p : list) {
+                      if (p.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
+                          active = true;
+                          if (!p.isAcknowledged()) {
+                              bc.acknowledgePurchase(AcknowledgePurchaseParams.newBuilder().setPurchaseToken(p.getPurchaseToken()).build(), r -> {
+                              });
+                          }
+                      } else if (p.getPurchaseState() == Purchase.PurchaseState.PENDING) {
+                          pending = true;
+                      }
+                  }
+                  playJs("{\"active\":" + active + (fresh && active ? ",\"bought\":true" : "") + (pending && !active ? ",\"pending\":true" : "") + ",\"price\":" + js(price()) + "}");
+              }
+
+              private void loadProduct(final Runnable then) {
+                  QueryProductDetailsParams q = QueryProductDetailsParams.newBuilder()
+                          .setProductList(Collections.singletonList(QueryProductDetailsParams.Product.newBuilder()
+                                  .setProductId(SUB_ID)
+                                  .setProductType(BillingClient.ProductType.SUBS)
+                                  .build()))
+                          .build();
+                  bc.queryProductDetailsAsync(q, (r, res) -> {
+                      List<ProductDetails> l = res.getProductDetailsList();
+                      if (l != null && !l.isEmpty()) subPd = l.get(0);
+                      runOnUiThread(then);
+                  });
+              }
+
+              private void queryOwned() {
+                  bc.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build(), (r, list) -> {
+                      if (r.getResponseCode() == BillingClient.BillingResponseCode.OK && list != null) handlePurchases(list, false);
+                      else playJs("{\"err\":\"silent\",\"offline\":true}");
+                  });
+              }
+
+              private void playBuyNow() {
+                  if (subPd == null || subPd.getSubscriptionOfferDetails() == null || subPd.getSubscriptionOfferDetails().isEmpty()) {
+                      playJs("{\"err\":\"noproduct\"}");
+                      return;
+                  }
+                  String tok = subPd.getSubscriptionOfferDetails().get(0).getOfferToken();
+                  BillingFlowParams f = BillingFlowParams.newBuilder()
+                          .setProductDetailsParamsList(Collections.singletonList(BillingFlowParams.ProductDetailsParams.newBuilder()
+                                  .setProductDetails(subPd)
+                                  .setOfferToken(tok)
+                                  .build()))
+                          .build();
+                  bc.launchBillingFlow(this, f);
               }
 
               private void startBio(String title, String sub, String cancel) {
@@ -412,6 +560,21 @@ jobs:
 
               class Bridge {
                   @JavascriptInterface
+                  public boolean isPlay() {
+                      return BuildConfig.PLAY;
+                  }
+
+                  @JavascriptInterface
+                  public void playQuery() {
+                      runOnUiThread(() -> billing(() -> loadProduct(() -> queryOwned())));
+                  }
+
+                  @JavascriptInterface
+                  public void playBuy() {
+                      runOnUiThread(() -> billing(() -> loadProduct(() -> playBuyNow())));
+                  }
+
+                  @JavascriptInterface
                   public void openUrl(final String u) {
                       runOnUiThread(() -> openExternal(u));
                   }
@@ -488,18 +651,24 @@ jobs:
           }
           EOF
 
-      - name: Build APK
-        run: gradle assembleRelease --no-daemon --stacktrace
+      - name: Build APK (site) and AAB (Google Play)
+        run: gradle assembleSiteRelease bundlePlayRelease --no-daemon --stacktrace
 
-      - name: Rename APK
+      - name: Rename files
         run: |
-          cp app/build/outputs/apk/release/app-release.apk Amlaki-v1.0.${{ github.run_number }}.apk
-          cp app/build/outputs/apk/release/app-release.apk Amlaki.apk
+          cp app/build/outputs/apk/site/release/app-site-release.apk Amlaki-v1.0.${{ github.run_number }}.apk
+          cp app/build/outputs/apk/site/release/app-site-release.apk Amlaki.apk
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab Amlaki-GooglePlay-v1.0.${{ github.run_number }}.aab
 
       - uses: actions/upload-artifact@v4
         with:
           name: Amlaki-APK
           path: Amlaki-v1.0.${{ github.run_number }}.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Amlaki-GooglePlay-AAB
+          path: Amlaki-GooglePlay-v1.0.${{ github.run_number }}.aab
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
