@@ -31,9 +31,20 @@ jobs:
       - name: Create Android project
         run: |
           set -e
-          mkdir -p app/src/main/java/com/dahshan/amlaki app/src/main/assets app/src/main/res/xml app/src/main/res/mipmap-xxxhdpi
+          mkdir -p app/src/main/java/com/dahshan/amlaki app/src/main/assets app/src/main/res/xml
           cp index.html app/src/main/assets/index.html
-          cp amlak-icon-512.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          # ===== App icon (all sizes) =====
+          if [ -d icons ]; then
+            cp -r icons/mipmap-* app/src/main/res/
+            echo "Icons copied from icons/ folder"
+          else
+            mkdir -p app/src/main/res/mipmap-xxxhdpi
+            cp amlak-icon-512.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+            cp amlak-icon-512.png app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+            echo "Icons folder not found - using amlak-icon-512.png"
+          fi
+          ls -R app/src/main/res | grep -i launcher
 
           cat > settings.gradle <<'EOF'
           pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
@@ -120,7 +131,7 @@ jobs:
               <application
                   android:label="أملاكي"
                   android:icon="@mipmap/ic_launcher"
-                  android:roundIcon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
                   android:allowBackup="true"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.Material.Light.NoActionBar">
